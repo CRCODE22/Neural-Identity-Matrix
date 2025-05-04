@@ -1,5 +1,6 @@
-While it is training example:
-![image](https://github.com/user-attachments/assets/86c4ce90-85b3-4e38-9eca-1f67b2909860)
+While it is training example updated 04/05/2025:
+
+![image](https://github.com/user-attachments/assets/2e56a37c-5b16-4795-bb09-93d43285c64d)
 
 Once it is done a training session there is still bugs with not all the fields showing up and the 2D and 3D neural networks animations are not showing yet
 it is coded but there are some things that need to be fixed because the animated javascript is not loaded properly:
