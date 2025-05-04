@@ -21,3 +21,7 @@ Here is a screenshot of the data from the created: checkpoint_learned_identities
 Here is a screenshot of 10 generated identities later still working on tweaking that it is more diverse:
 
 ![image](https://github.com/user-attachments/assets/2ce857fc-784f-4826-88b0-83a880d525bd)
+
+Here is a screenshot of the Anaconda console while training and completed:
+
+![image](https://github.com/user-attachments/assets/f082fa63-8492-416e-bca9-58bb48c2f619)
