@@ -1,13 +1,11 @@
-While it is training example updated 05/05/2025:
+While it is training example:
 
-![image](https://github.com/user-attachments/assets/45944c19-1bf5-4b49-aaec-20fba575311f)
-
-Updated 05/05/2025
+![image](https://github.com/user-attachments/assets/45944c19-1bf5-4b49-aaec-20fba575311f) Updated 05/05/2025
 
 2D and 3D Neural Network Animations are now working and Matrix Falling Character Rain.
 Once you have Gradio running locally open index.html from a local folder on your computer and the Gradio interface will be integrated through iframe
 
-![image](https://github.com/user-attachments/assets/60ab355c-6c83-47d3-b3eb-22821a675954)
+![image](https://github.com/user-attachments/assets/60ab355c-6c83-47d3-b3eb-22821a675954) Updated 05/05/2025
 
 You can resume by checking Resume Training from Checkpoint
 
@@ -21,9 +19,9 @@ Here is a screenshot of the data from the created: checkpoint_learned_identities
 
 ![image](https://github.com/user-attachments/assets/8423b523-afb5-4b93-ae78-01e507091a04)
 
-Here is a screenshot of 10 generated identities later still working on tweaking that it is more diverse:
+Here is a screenshot of generated identities.
 
-![image](https://github.com/user-attachments/assets/2ce857fc-784f-4826-88b0-83a880d525bd)
+![image](https://github.com/user-attachments/assets/34e90941-d98c-447c-8dd5-027a7c013b1d) Updated 05/05/2025
 
 Here is a screenshot of the Anaconda console while training and completed:
 
