@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural Identity Matrix Visualizations</title>
+    <style>
+        body {
+            background: black;
+            color: #00ffcc;
+            font-family: monospace;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #matrix-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+
+        #neural-activity {
+            position: fixed;
+            top: 7px;
+            left: 7px;
+            width: 150px;
+            height: 150px;
+            border: 2px solid #00ffcc;
+            z-index: 1;
+        }
+
+        .neural-node {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: #00ffcc;
+            border-radius: 60%;
+            animation: pulse 1s infinite;
+        }
+
+        #neural-network-3d {
+            width: 100%;
+            height: 200px;
+            margin-top: 20px;
+            z-index: 1;
+        }
+
+        #gradio-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px; /* Adjust as needed */
+            margin: 10px auto;
+            z-index: 1;
+        }
+
+        #gradio-iframe {
+            width: 100%;
+            height: 1000px; /* Adjusted height for the Gradio app */
+            border: 3px solid #00ffcc;
+            background: transparent;
+            z-index: 1;
+            position: relative;
+            animation: glow 2s infinite;
+        }
+
+        #gradio-matrix-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none; /* Allows interaction with the iframe */
+            opacity: 0.2; /* Semi-transparent overlay */
+        }
+
+        .visualization-error {
+            color: #ff5555;
+            text-align: center;
+            padding: 10px;
+            z-index: 2;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.5);
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes glow {
+            0% {
+                box-shadow: 0 0 5px #00ffcc, 0 0 10px #00ffcc;
+            }
+
+            50% {
+                box-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc;
+            }
+
+            100% {
+                box-shadow: 0 0 5px #00ffcc, 0 0 10px #00ffcc;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="matrix-bg"></canvas>
+    <div id="neural-activity"></div>
+    <div id="neural-network-3d"></div>
+    <div id="gradio-container">
+        <iframe id="gradio-iframe" src="http://127.0.0.1:7860" frameborder="0"></iframe>
+        <canvas id="gradio-matrix-overlay"></canvas>
+    </div>
+    <script src="three.min.js"></script>
+    <script>
+        console.log("Three.js loaded");
+
+        // Visualization JavaScript
+        setTimeout(function () {
+            console.log("index.html JavaScript started");
+
+            // Check DOM elements
+            const matrixCanvas = document.getElementById('matrix-bg');
+            const neuralContainer = document.getElementById('neural-activity');
+            const neural3D = document.getElementById('neural-network-3d');
+            const gradioIframe = document.getElementById('gradio-iframe');
+            const gradioOverlay = document.getElementById('gradio-matrix-overlay');
+            if (!matrixCanvas) console.error("Matrix canvas not found");
+            if (!neuralContainer) console.error("Neural activity container not found");
+            if (!neural3D) console.error("Neural network 3D container not found");
+            if (!gradioIframe) console.error("Gradio iframe not found");
+            if (!gradioOverlay) console.error("Gradio overlay canvas not found");
+
+            // Matrix Rain (Background)
+            try {
+                console.log("Initializing Matrix Rain");
+                const ctx = matrixCanvas.getContext('2d');
+                matrixCanvas.height = window.innerHeight;
+                matrixCanvas.width = window.innerWidth;
+                const chars = '$#*^()€0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ½ôÓ-^ÅÒ±©¨›šÊ“';
+                const fontSize = 10;
+                const columns = matrixCanvas.width / fontSize;
+                const drops = Array(Math.floor(columns)).fill(1);
+                function drawMatrix() {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                    ctx.fillRect(0, 0, matrixCanvas.width, matrixCanvas.height);
+                    ctx.fillStyle = '#00ffcc';
+                    ctx.font = `${fontSize}px monospace`;
+                    for (let i = 0; i < drops.length; i++) {
+                        const text = chars.charAt(Math.floor(Math.random() * chars.length));
+                        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                        if (drops[i] * fontSize > matrixCanvas.height && Math.random() > 0.975)
+                            drops[i] = 0;
+                        drops[i]++;
+                    }
+                }
+                setInterval(drawMatrix, 75);
+            } catch (error) {
+                console.error("Matrix Rain Error:", error);
+                document.body.innerHTML += '<div class="visualization-error">Failed to load Matrix Rain: ' + error.message + '</div>';
+            }
+
+            // Matrix Rain Overlay for Gradio iframe
+            try {
+                console.log("Initializing Gradio Matrix Overlay");
+                const overlayCtx = gradioOverlay.getContext('2d');
+                gradioOverlay.height = gradioIframe.clientHeight;
+                gradioOverlay.width = gradioIframe.clientWidth;
+                const overlayColumns = gradioOverlay.width / fontSize;
+                const overlayDrops = Array(Math.floor(overlayColumns)).fill(1);
+                function drawGradioMatrix() {
+                    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                    overlayCtx.fillRect(0, 0, gradioOverlay.width, gradioOverlay.height);
+                    overlayCtx.fillStyle = '#00ffcc';
+                    overlayCtx.font = `${fontSize}px monospace`;
+                    for (let i = 0; i < overlayDrops.length; i++) {
+                        const text = chars.charAt(Math.floor(Math.random() * chars.length));
+                        overlayCtx.fillText(text, i * fontSize, overlayDrops[i] * fontSize);
+                        if (overlayDrops[i] * fontSize > gradioOverlay.height && Math.random() > 0.975)
+                            overlayDrops[i] = 0;
+                        overlayDrops[i]++;
+                    }
+                }
+                setInterval(drawGradioMatrix, 75);
+            } catch (error) {
+                console.error("Gradio Matrix Overlay Error:", error);
+            }
+
+            // 2D Neural Animation
+            try {
+                console.log("Initializing 2D Neural Animation");
+                for (let i = 0; i < 10; i++) {
+                    const node = document.createElement('div');
+                    node.className = 'neural-node';
+                    node.style.left = Math.random() * 100 + '%';
+                    node.style.top = Math.random() * 100 + '%';
+                    node.style.animationDelay = Math.random() * 5 + 's';
+                    neuralContainer.appendChild(node);
+                }
+            } catch (error) {
+                console.error("2D Neural Animation Error:", error);
+                neuralContainer.innerHTML = '<div class="visualization-error">Failed to load 2D animation: ' + error.message + '</div>';
+            }
+
+            // 3D Neural Network
+            try {
+                console.log("Initializing 3D Neural Network");
+                if (!window.THREE) {
+                    throw new Error("Three.js not loaded");
+                }
+                const scene = new THREE.Scene();
+                const camera = new THREE.PerspectiveCamera(75, neural3D.clientWidth / 200, 0.1, 1000);
+                const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                renderer.setSize(neural3D.clientWidth, 200);
+                neural3D.appendChild(renderer.domElement);
+
+                const layers = [
+                    { neurons: 4, x: -150 },
+                    { neurons: 3, x: -50 },
+                    { neurons: 2, x: 50 },
+                    { neurons: 1, x: 150 }
+                ];
+                const nodes = [];
+                const edges = [];
+                const pulses = [];
+
+                layers.forEach((layer, layerIndex) => {
+                    const neurons = [];
+                    for (let i = 0; i < layer.neurons; i++) {
+                        const y = (i - (layer.neurons - 1) / 2) * 50;
+                        const geometry = new THREE.SphereGeometry(5, 16, 16);
+                        const material = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+                        const sphere = new THREE.Mesh(geometry, material);
+                        sphere.position.set(layer.x, y, 0);
+                        scene.add(sphere);
+                        neurons.push(sphere);
+                    }
+                    nodes.push(neurons);
+                });
+
+                for (let l = 0; l < layers.length - 1; l++) {
+                    for (let i = 0; i < layers[l].neurons; i++) {
+                        for (let j = 0; j < layers[l + 1].neurons; j++) {
+                            const start = nodes[l][i].position;
+                            const end = nodes[l + 1][j].position;
+                            const geometry = new THREE.BufferGeometry().setFromPoints([start, end]);
+                            const material = new THREE.LineBasicMaterial({ color: 0x00e6e6, transparent: true, opacity: 0.3 });
+                            const line = new THREE.Line(geometry, material);
+                            scene.add(line);
+                            edges.push({ line, start, end });
+                        }
+                    }
+                }
+
+                function createPulse(start, end) {
+                    const geometry = new THREE.SphereGeometry(3, 8, 8);
+                    const material = new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.8 });
+                    const pulse = new THREE.Mesh(geometry, material);
+                    pulse.position.copy(start);
+                    scene.add(pulse);
+                    return { pulse, start, end, t: 0 };
+                }
+
+                camera.position.z = 300;
+                function animate3D() {
+                    requestAnimationFrame(animate3D);
+                    if (Math.random() < 0.05) {
+                        const edge = edges[Math.floor(Math.random() * edges.length)];
+                        pulses.push(createPulse(edge.start, edge.end));
+                    }
+                    pulses.forEach((pulse, index) => {
+                        pulse.t += 0.02;
+                        if (pulse.t > 1) {
+                            scene.remove(pulse.pulse);
+                            pulses.splice(index, 1);
+                            return;
+                        }
+                        pulse.pulse.position.lerpVectors(pulse.start, pulse.end, pulse.t);
+                        pulse.pulse.material.opacity = 0.8 * (1 - pulse.t);
+                    });
+                    scene.rotation.y += 0.005;
+                    renderer.render(scene, camera);
+                }
+                animate3D();
+
+                window.addEventListener('resize', () => {
+                    renderer.setSize(neural3D.clientWidth, 200);
+                    camera.aspect = neural3D.clientWidth / 200;
+                    camera.updateProjectionMatrix();
+                });
+            } catch (error) {
+                console.error("3D Visualization Error:", error);
+                neural3D.innerHTML = '<div class="visualization-error">Failed to load 3D visualization: ' + error.message + '</div>';
+            }
+
+            console.log("index.html JavaScript completed");
+        }, 100);
+    </script>
+</body>
+</html>
