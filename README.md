@@ -1,11 +1,13 @@
-While it is training example updated 04/05/2025:
+While it is training example updated 05/05/2025:
 
-![image](https://github.com/user-attachments/assets/2e56a37c-5b16-4795-bb09-93d43285c64d)
+![image](https://github.com/user-attachments/assets/45944c19-1bf5-4b49-aaec-20fba575311f)
 
-Once it is done a training session there is still bugs with not all the fields showing up and the 2D and 3D neural networks animations are not showing yet
-it is coded but there are some things that need to be fixed because the animated javascript is not loaded properly:
+Updated 05/05/2025
 
-![image](https://github.com/user-attachments/assets/e4560fe7-b10e-4143-a0c4-9f283f54a3e0)
+2D and 3D Neural Network Animations are now working and Matrix Falling Character Rain.
+Once you have Gradio running locally open index.html from a local folder on your computer and the Gradio interface will be integrated through iframe
+
+![image](https://github.com/user-attachments/assets/60ab355c-6c83-47d3-b3eb-22821a675954)
 
 You can resume by checking Resume Training from Checkpoint
 
