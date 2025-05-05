@@ -11,10 +11,6 @@ You can resume by checking Resume Training from Checkpoint
 
 ![image](https://github.com/user-attachments/assets/9c3f5043-1abb-4fb2-8837-28873d95f819)
 
-In these fields the 2D and 3D neutral activity animations should show up in real time but Grok and I are still working on making it load the javascript.
-
-![image](https://github.com/user-attachments/assets/fb5d6f8e-410c-450b-a051-e447f5268628)
-
 Here is a screenshot of the data from the created: checkpoint_learned_identities.csv
 
 ![image](https://github.com/user-attachments/assets/8423b523-afb5-4b93-ae78-01e507091a04)
