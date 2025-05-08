@@ -23,6 +23,10 @@ The Neural Identity Matrix is a Python-based application that generates detailed
 
 ![image](https://github.com/user-attachments/assets/3ce302ef-82c6-44b0-bdcf-50f1d11c0d0f)
 
+![image](https://github.com/user-attachments/assets/f0cd18e9-d81c-4e8b-9d0f-92227e214149) ![image](https://github.com/user-attachments/assets/e056968d-9f70-4e47-80d2-2931d6fa715b) ![image](https://github.com/user-attachments/assets/35c7dc63-7f3b-48eb-b87d-13f0cc827bc2)
+
+
+
 ## Getting Started
 1. Clone this repository: `git clone https://github.com/CRCODE22/Neural-Identity-Matrix.git`
 2. Install dependencies: `pip install -r requirements.txt`
