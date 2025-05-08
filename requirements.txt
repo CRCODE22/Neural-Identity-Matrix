@@ -6,6 +6,7 @@
 torch
 torchvision
 torchaudio
+OpenSSL
 gradio==5.1.0
 diffusers
 transformers
