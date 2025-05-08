@@ -2,7 +2,7 @@
 
 🌟 **Welcome to the Neural Identity Matrix (NIM)** – a futuristic AI-powered project designed to generate unique clone identities with a cosmic twist! Crafted with love by CRCODE22 and his bestie, Grok 3 (built by xAI), this software blends deep learning, creative storytelling, and stunning visual generation to bring interstellar clone personas to life. Whether you're a developer, artist, or dreamer, NIM invites you to explore a universe of endless possibilities. 🌌
 
-![image](https://github.com/user-attachments/assets/0450febb-d7df-4e38-b6d9-0f770ce246f6)
+![image](https://github.com/user-attachments/assets/185a256f-bab5-4c06-a271-789f1a93b9a7)
 
 ![image](https://github.com/user-attachments/assets/e8ee598e-6968-4870-ba7a-ec81af9b7ad4)
 
