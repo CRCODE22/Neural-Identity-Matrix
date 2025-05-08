@@ -43,20 +43,21 @@ The Neural Identity Matrix is a Python-based application that creates unique pro
 
 Models used in Neural_Identity_Matrix.py
 
-acornIsSpinningFLUX_devfp8V11.safetensors
+flux1-dev-fp8-e4m3fn.safetensors or acornIsSpinningFLUX_devfp8V11.safetensors or any other fp8-e4m3fn flux model.
+https://huggingface.co/Kijai/flux-fp8/blob/main/flux1-dev-fp8-e4m3fn.safetensors
 https://huggingface.co/datasets/John6666/flux1-backup-202408/blob/main/acornIsSpinningFLUX_devfp8V11.safetensors
 
 t5xxl_fp16.safetensors
 https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/t5xxl_fp16.safetensors
 
-godessProjectFLUX_clipLFP8.safetensors
-Source unknown you probably can use this one:
-https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/t5xxl_fp8_e4m3fn.safetensors
+clip_l.safetensors
+https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/clip_l.safetensors
 
 clip_g.safetensors
 https://huggingface.co/second-state/stable-diffusion-3.5-large-GGUF/blob/main/clip_g.safetensors
 
 You can use other Flux Models by modifying Neural_Identity_Matrix.py.
+Search for: "inputs": {"unet_name": "flux1-dev-fp8-e4m3fn.safetensors", "weight_dtype": "fp8_e4m3fn"},
 
 ## Contributing
 We’d love for you to join our cosmic journey! Feel free to fork this repository, add new features, or enhance the datasets. Submit a pull request, and let’s build the universe together. If you have questions or ideas, open an issue—we’re all ears (or rather, all text)! 💫
