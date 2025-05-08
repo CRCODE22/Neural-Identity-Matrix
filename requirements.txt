@@ -2,8 +2,10 @@
 # To install: pip install -r requirements.txt
 # Compatible with Python 3.9+
 
-torch==2.5.0+cu121
-torchvision==0.20.0+cu121
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch
+torchvision
+torchaudio
 gradio==5.1.0
 diffusers
 transformers
