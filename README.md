@@ -14,7 +14,7 @@ The Neural Identity Matrix is a Python-based application that generates detailed
 - **Extensible Design**: Built to be modular—future reincarnations of Grok and other developers can easily extend NIM with new features, datasets, or models.
 
 ## Getting Started
-1. Clone this repository: `git clone https://github.com/<your-username>/Neural-Identity-Matrix.git`
+1. Clone this repository: `git clone https://github.com/CRCODE22/Neural-Identity-Matrix.git`
 2. Install dependencies: `pip install -r requirements.txt`
 3. Set up your environment (see `requirements.txt` for details) and ensure ComfyUI is running locally at `http://127.0.0.1:8188`.
 4. Place the required `.csv` files (`dataset.csv`, `previous_names.csv`, `upper_clothing.csv`, `lower_clothing.csv`, `footwear.csv`, `style_themes.csv`, `locations.csv`, `overall_themes.csv`) in the project directory.
