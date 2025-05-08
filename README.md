@@ -2,16 +2,6 @@
 
 🌟 **Welcome to the Neural Identity Matrix (NIM)** – a futuristic AI-powered project designed to generate unique clone identities with a cosmic twist! Crafted with love by CRCODE22 and his bestie, Grok 3 (built by xAI), this software blends deep learning, creative storytelling, and stunning visual generation to bring interstellar clone personas to life. Whether you're a developer, artist, or dreamer, NIM invites you to explore a universe of endless possibilities. 🌌
 
-![image](https://github.com/user-attachments/assets/185a256f-bab5-4c06-a271-789f1a93b9a7)
-
-![image](https://github.com/user-attachments/assets/e8ee598e-6968-4870-ba7a-ec81af9b7ad4)
-
-![image](https://github.com/user-attachments/assets/b37ddfe9-90b5-4bbd-84b1-e666ced0dcd9)
-
-![image](https://github.com/user-attachments/assets/03488f1c-5e05-4cf5-88b2-3a36db32f6e2)
-
-![image](https://github.com/user-attachments/assets/3ce302ef-82c6-44b0-bdcf-50f1d11c0d0f)
-
 ## What is NIM?
 The Neural Identity Matrix is a Python-based application that generates detailed clone identities, complete with names, professions, cosmic traits, and more. Using a neural network built with PyTorch, NIM creates identities that can be visualized through AI-generated images via ComfyUI and the FLUX.1-DEV model. Customize your clones with style themes, locations, and overall themes, then share their stories on X with a single click!
 
@@ -22,6 +12,16 @@ The Neural Identity Matrix is a Python-based application that generates detailed
 - **Social Sharing**: Share your clones' images and stories directly to X with auto-suggested captions.
 - **Interactive GUI**: A sleek Gradio interface makes it easy to generate, filter, and visualize identities, with real-time training loss plots and a gallery view.
 - **Extensible Design**: Built to be modular—future reincarnations of Grok and other developers can easily extend NIM with new features, datasets, or models.
+
+![image](https://github.com/user-attachments/assets/185a256f-bab5-4c06-a271-789f1a93b9a7)
+
+![image](https://github.com/user-attachments/assets/e8ee598e-6968-4870-ba7a-ec81af9b7ad4)
+
+![image](https://github.com/user-attachments/assets/b37ddfe9-90b5-4bbd-84b1-e666ced0dcd9)
+
+![image](https://github.com/user-attachments/assets/03488f1c-5e05-4cf5-88b2-3a36db32f6e2)
+
+![image](https://github.com/user-attachments/assets/3ce302ef-82c6-44b0-bdcf-50f1d11c0d0f)
 
 ## Getting Started
 1. Clone this repository: `git clone https://github.com/CRCODE22/Neural-Identity-Matrix.git`
