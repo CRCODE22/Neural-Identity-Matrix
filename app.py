@@ -1,16 +1,11 @@
-# --- Start of Neural Identity Matrix V24.32 ---
-# You need python 3.10.6.
-# Run `python -m py_compile Neural_Identity_Matrix_original_Test_V24.32.py` to check syntax before execution
+# --- Start of Neural Identity Matrix V24.34 ---
+# Run `python -m py_compile Neural_Identity_Matrix_original_Test_V24.34.py` to check syntax before execution
 # Ensure dataset.csv, previous_names.csv, upper_clothing.csv, lower_clothing.csv, footwear.csv, style_themes.csv, locations.csv, overall_themes.csv are in the project directory
 # Setup: conda activate neural-identity-matrix; pip install -r requirements.txt
-# Note: Compatible with PyTorch 2.5.0+cu121; update torch.amp for future versions
+# Note: Compatible with torch-2.5.1+cu124; update torch.amp for future versions
 # Gradio table requires horizontal scrolling for all columns; adjust screen resolution if needed
 # ComfyUI must be running locally at http://127.0.0.1:8188 for image generation
 # X API credentials required for sharing feature; set up in environment variables
-# Download flux1-dev-fp8-e4m3fn.safetensors here:https://huggingface.co/Kijai/flux-fp8/blob/main/flux1-dev-fp8-e4m3fn.safetensors
-# Download t5xxl_fp16.safetensors here:https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/t5xxl_fp16.safetensors
-# Download clip_l.safetensors here https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/clip_l.safetensors
-# Download clip_g.safetensors here https://huggingface.co/second-state/stable-diffusion-3.5-large-GGUF/blob/main/clip_g.safetensors
 
 import pandas as pd
 import numpy as np
@@ -44,7 +39,7 @@ random.seed(42)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Startup message
-print(f"Starting Neural Identity Matrix V24.32 | Device: {device} | Python: {sys.version.split()[0]} | PyTorch: {torch.__version__} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"Starting Neural Identity Matrix V24.33 | Device: {device} | Python: {sys.version.split()[0]} | PyTorch: {torch.__version__} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 # Predefined lists (unchanged)
 predefined_first_names = [
@@ -514,7 +509,7 @@ def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, styl
             "59": {
                 "inputs": {
                     "clip_name1": "t5xxl_fp16.safetensors",
-                    "clip_name2": "clip_l.safetensors",
+                    "clip_name2": "godessProjectFLUX_clipLFP8.safetensors",
                     "clip_name3": "clip_g.safetensors"
                 },
                 "class_type": "TripleCLIPLoader"
@@ -535,7 +530,7 @@ def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, styl
                 "class_type": "Lora Loader Stack (rgthree)"
             },
             "12": {
-                "inputs": {"unet_name": "flux1-dev-fp8-e4m3fn.safetensors", "weight_dtype": "fp8_e4m3fn"},
+                "inputs": {"unet_name": "acornIsSpinningFLUX_devfp8V11.safetensors", "weight_dtype": "fp8_e4m3fn"},
                 "class_type": "UNETLoader"
             }
         }
@@ -663,13 +658,31 @@ def suggest_caption(row):
         traits.append(f"with her {row['Cosmic Pet'].lower()}")
     if row['Cosmic Hobby'] != 'None':
         traits.append(f"enjoying {row['Cosmic Hobby'].lower()}")
-    return f"{random.choice(traits)} shines in V24.32! 🌌 #CosmicDreams #AIArt"
+    return f"{random.choice(traits)} shines in V24.33! 🌌 #CosmicDreams #AIArt"
 
-# Share image to X with suggested caption
+# Share image to X with suggested caption (Updated to fix ValueError)
 def share_to_x(image_path, caption, df_identities, selected_identity):
+    # Debug: Log the types and values
+    print(f"image_path type: {type(image_path)}, value: {image_path}")
+    print(f"selected_identity type: {type(selected_identity)}, value: {selected_identity}")
+    print(f"df_identities type: {type(df_identities)}, columns: {list(df_identities.columns) if df_identities is not None else 'None'}")
+
+    # Ensure image_path is a string
+    if isinstance(image_path, (list, np.ndarray)):
+        image_path = image_path[0] if len(image_path) > 0 else None
+    elif isinstance(image_path, pd.Series):
+        image_path = image_path.iloc[0] if not image_path.empty else None
+
+    # Ensure selected_identity is a string
+    if isinstance(selected_identity, (list, np.ndarray)):
+        selected_identity = selected_identity[0] if len(selected_identity) > 0 else None
+    elif isinstance(selected_identity, pd.Series):
+        selected_identity = selected_identity.iloc[0] if not selected_identity.empty else None
+
+    # Validate inputs
     if not image_path or not selected_identity or selected_identity == "None":
         return "Error: Please select an identity and generate an image first."
-    
+
     try:
         clone_number, nickname = selected_identity.split(": ")
         row = df_identities[df_identities['Clone Number'] == clone_number].iloc[0]
@@ -1492,4 +1505,4 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
     )
 
 demo.launch(share=False)
-# --- End of Neural Identity Matrix V24.33 ---
+# --- End of Neural Identity Matrix V24.34 ---
