@@ -1,7 +1,8 @@
 # --- Start of Neural Identity Matrix V24.32 ---
+# You need python 3.10.6.
 # Run `python -m py_compile Neural_Identity_Matrix_original_Test_V24.32.py` to check syntax before execution
 # Ensure dataset.csv, previous_names.csv, upper_clothing.csv, lower_clothing.csv, footwear.csv, style_themes.csv, locations.csv, overall_themes.csv are in the project directory
-# Setup: conda activate cloneidentitygeneratorgui; pip install torch==2.5.0+cu121 torchvision==0.20.0+cu121 gradio==5.1.0 diffusers transformers pandas numpy matplotlib tweepy==4.14.0
+# Setup: conda activate neural-identity-matrix; pip install -r requirements.txt
 # Note: Compatible with PyTorch 2.5.0+cu121; update torch.amp for future versions
 # Gradio table requires horizontal scrolling for all columns; adjust screen resolution if needed
 # ComfyUI must be running locally at http://127.0.0.1:8188 for image generation
