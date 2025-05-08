@@ -6,6 +6,10 @@
 # Gradio table requires horizontal scrolling for all columns; adjust screen resolution if needed
 # ComfyUI must be running locally at http://127.0.0.1:8188 for image generation
 # X API credentials required for sharing feature; set up in environment variables
+# Download flux1-dev-fp8-e4m3fn.safetensors here:https://huggingface.co/Kijai/flux-fp8/blob/main/flux1-dev-fp8-e4m3fn.safetensors
+# Download t5xxl_fp16.safetensors here:https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/t5xxl_fp16.safetensors
+# Download clip_l.safetensors here https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/clip_l.safetensors
+# Download clip_g.safetensors here https://huggingface.co/second-state/stable-diffusion-3.5-large-GGUF/blob/main/clip_g.safetensors
 
 import pandas as pd
 import numpy as np
@@ -509,7 +513,7 @@ def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, styl
             "59": {
                 "inputs": {
                     "clip_name1": "t5xxl_fp16.safetensors",
-                    "clip_name2": "godessProjectFLUX_clipLFP8.safetensors",
+                    "clip_name2": "clip_l.safetensors",
                     "clip_name3": "clip_g.safetensors"
                 },
                 "class_type": "TripleCLIPLoader"
@@ -530,7 +534,7 @@ def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, styl
                 "class_type": "Lora Loader Stack (rgthree)"
             },
             "12": {
-                "inputs": {"unet_name": "acornIsSpinningFLUX_devfp8V11.safetensors", "weight_dtype": "fp8_e4m3fn"},
+                "inputs": {"unet_name": "flux1-dev-fp8-e4m3fn.safetensors", "weight_dtype": "fp8_e4m3fn"},
                 "class_type": "UNETLoader"
             }
         }
