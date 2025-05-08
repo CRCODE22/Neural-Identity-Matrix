@@ -1,20 +1,16 @@
 # requirements.txt for Neural Identity Matrix V24.32
 # To install: pip install -r requirements.txt
-# Compatible with Python 3.9+
---extra-index-url https://download.pytorch.org/whl/cu124
-torch
-torchvision
-torchaudio
-gradio==5.1.0
+# Compatible with Python 3.10.6
+--index-url https://download.pytorch.org/whl/cu124
+--index-url https://pypi.org/simple
+torch>=2.0.0,<=2.5.1
+torchvision>=0.15.0,<=0.20.0
+gradio
 diffusers
 transformers
 pandas
 numpy
 matplotlib
-tweepy==4.14.0
+tweepy
 requests
 pillow
-secrets
-scikit-learn
-matplotlib
-tweepy
