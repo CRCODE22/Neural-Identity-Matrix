@@ -1,445 +1,924 @@
-# Copyright (C) 2025 CRCODE22
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, version 3.0
-import numpy as np
+# --- Start of Neural Identity Matrix V24.32 ---
+# Run `python -m py_compile Neural_Identity_Matrix_original_Test_V24.32.py` to check syntax before execution
+# Ensure dataset.csv, previous_names.csv, upper_clothing.csv, lower_clothing.csv, footwear.csv, style_themes.csv, locations.csv, overall_themes.csv are in the project directory
+# Setup: conda activate cloneidentitygeneratorgui; pip install torch==2.5.0+cu121 torchvision==0.20.0+cu121 gradio==5.1.0 diffusers transformers pandas numpy matplotlib tweepy==4.14.0
+# Note: Compatible with PyTorch 2.5.0+cu121; update torch.amp for future versions
+# Gradio table requires horizontal scrolling for all columns; adjust screen resolution if needed
+# ComfyUI must be running locally at http://127.0.0.1:8188 for image generation
+# X API credentials required for sharing feature; set up in environment variables
+
 import pandas as pd
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.init as init
 import torch.optim as optim
-from sklearn.preprocessing import LabelEncoder, MinMaxScaler
-import gradio as gr
-import plotly.express as px
-import time
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from datetime import datetime, timedelta
+import gradio as gr
+import matplotlib.pyplot as plt
+import random
 import os
+import glob
+os.environ["HF_HUB_OFFLINE"] = "1"
 import pickle
+import time
+import sys
+import json
+import requests
+from PIL import Image
+import io
+import secrets
+import tweepy
 
 # Set random seed for reproducibility
 np.random.seed(42)
 torch.manual_seed(42)
+random.seed(42)
 
-# Define the Identity Generator Neural Network
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Startup message
+print(f"Starting Neural Identity Matrix V24.32 | Device: {device} | Python: {sys.version.split()[0]} | PyTorch: {torch.__version__} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+# Predefined lists (unchanged)
+predefined_first_names = [
+    'Ava', 'Emma', 'Olivia', 'Sophia', 'Isabella', 'Mia', 'Charlotte', 'Amelia', 'Harper', 'Evelyn',
+    'Luna', 'Aria', 'Ella', 'Nora', 'Hazel', 'Zoe', 'Lily', 'Ellie', 'Violet', 'Grace',
+    'James', 'Liam', 'Noah', 'William', 'Henry', 'Oliver', 'Elijah', 'Lucas', 'Mason', 'Logan',
+    'Ethan', 'Jack', 'Aiden', 'Carter', 'Daniel', 'Owen', 'Wyatt', 'John', 'David', 'Gabriel'
+]
+predefined_last_names = [
+    'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez',
+    'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin',
+    'Lee', 'Perez', 'Thompson', 'White', 'Harris', 'Sanchez', 'Clark', 'Ramirez', 'Lewis', 'Walker',
+    'Hall', 'Allen', 'Young', 'King', 'Wright', 'Scott', 'Green', 'Baker', 'Adams', 'Nelson'
+]
+
+# Load clothing datasets
+try:
+    print("Loading clothing datasets...")
+    upper_clothing_df = pd.read_csv('upper_clothing.csv')
+    lower_clothing_df = pd.read_csv('lower_clothing.csv')
+    footwear_df = pd.read_csv('footwear.csv')
+    print(f"Loaded upper_clothing.csv with {len(upper_clothing_df)} items")
+    print(f"Loaded lower_clothing.csv with {len(lower_clothing_df)} items")
+    print(f"Loaded footwear.csv with {len(footwear_df)} items")
+except FileNotFoundError as e:
+    print(f"Error: {e}. Please ensure upper_clothing.csv, lower_clothing.csv, and footwear.csv are in the project directory.")
+    raise
+
+upper_clothing_list = upper_clothing_df['Clothing'].tolist()
+lower_clothing_list = lower_clothing_df['Clothing'].tolist()
+footwear_list = footwear_df['Clothing'].tolist()
+
+# Load new datasets for style themes, locations, and overall themes
+try:
+    print("Loading style themes, locations, and overall themes datasets...")
+    style_themes_df = pd.read_csv('style_themes.csv')
+    locations_df = pd.read_csv('locations.csv')
+    overall_themes_df = pd.read_csv('overall_themes.csv')
+    print(f"Loaded style_themes.csv with {len(style_themes_df)} items")
+    print(f"Loaded locations.csv with {len(locations_df)} items")
+    print(f"Loaded overall_themes.csv with {len(overall_themes_df)} items")
+except FileNotFoundError as e:
+    print(f"Error: {e}. Please ensure style_themes.csv, locations.csv, and overall_themes.csv are in the project directory.")
+    raise
+
+style_themes_list = sorted(style_themes_df['Theme'].tolist())  # Sort alphabetically
+locations_list = sorted(locations_df['Location'].tolist())  # Sort alphabetically
+overall_themes_list = sorted(overall_themes_df['Theme'].tolist())  # Sort alphabetically
+
+# Neural Network Model
 class IdentityGenerator(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
         super(IdentityGenerator, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Linear(hidden_dim // 2, hidden_dim // 4),
-            nn.ReLU(),
-        )
-        self.decoder = nn.Sequential(
-            nn.Linear(hidden_dim // 4, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Linear(hidden_dim // 2, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim),
-            nn.Sigmoid()
-        )
-        self.initialize_weights()
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, output_size)
+    
+    def forward(self, x, hidden, cell):
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+        out, (hidden, cell) = self.lstm(x, (hidden, cell))
+        out = self.fc(out)
+        return out, hidden, cell
+    
+    def init_hidden(self, batch_size):
+        return (torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device),
+                torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device))
 
-    def initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
+# Name Generator
+class NameGenerator(nn.Module):
+    def __init__(self, vocab_size, hidden_size, embedding_dim, num_layers=1):
+        super(NameGenerator, self).__init__()
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.lstm = nn.LSTM(embedding_dim, hidden_size, num_layers=num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, vocab_size)
+    
+    def forward(self, x, hidden, cell):
+        embedded = self.embedding(x)
+        out, (hidden, cell) = self.lstm(embedded, (hidden, cell))
+        out = self.fc(out)
+        return out, hidden, cell
+    
+    def init_hidden(self, batch_size):
+        return (torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device),
+                torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device))
 
-    def forward(self, x):
-        encoded = self.encoder(x)
-        decoded = self.decoder(encoded)
-        return decoded
+# Load dataset
+try:
+    print("Loading dataset from dataset.csv")
+    df = pd.read_csv('dataset.csv')
+    print(f"Loaded dataset.csv with {len(df)} rows")
+except FileNotFoundError:
+    print("Error: dataset.csv not found!")
+    raise
+try:
+    additional_names = pd.read_csv('previous_names.csv')
+    print(f"Loaded {len(additional_names)} additional first names and last names from previous_names.csv")
+except FileNotFoundError:
+    print("Warning: previous_names.csv not found. Creating empty DataFrame.")
+    additional_names = pd.DataFrame(columns=['Firstname', 'Lastname'])
 
-# Function to generate synthetic dataset with reordered columns (excluding Clone Number)
-def generate_synthetic_dataset(num_samples=10000):
-    data = {
-        'Firstname': np.random.choice(['Emma', 'Olivia', 'Ava', 'Sophia', 'Amelia', 'Charlotte', 'Kisa', 'Lilith', 'Susan', 'Joyce', 'Zara', 'Luna', 'Nova', 'Aria', 'Mila'], num_samples),
-        'Lastname': np.random.choice(['Smith', 'Johnson', 'Brown', 'Taylor', 'Wilson', 'Gadot', 'Roovers', 'Anderson', 'Lee', 'Kim', 'Patel', 'Garcia', 'Nguyen'], num_samples),
-        'Nickname': np.random.choice(['Em', 'Liv', 'Ava', 'Sophie', 'Amy', 'Charlie', 'Bella', 'Zee', 'Luna', 'Nova'], num_samples),
-        'Age': np.random.uniform(18, 40, num_samples),
-        'Born': pd.to_datetime([datetime.now() - timedelta(days=np.random.uniform(18, 40) * 365) for _ in range(num_samples)]).strftime('%Y-%m-%d'),
-        'Nationality': np.random.choice(['American', 'British', 'French', 'Japanese', 'Australian', 'Dutch', 'Russian', 'Ukrainian', 'Indian', 'Brazilian', 'Chinese'], num_samples),
-        'Ethnicity': np.random.choice(['Caucasian', 'Asian', 'African', 'Mixed', 'Latina', 'South Asian', 'Middle Eastern'], num_samples),
-        'Birthplace': np.random.choice(['New York, USA', 'London, UK', 'Paris, France', 'Tokyo, Japan', 'Netherlands', 'Russia', 'China', 'Turkey', 'Ukraine', 'Spain', 'Italy', 'Brazil', 'Iran', 'India', 'Australia'], num_samples),
-        'Profession': np.random.choice(['Doctor', 'Engineer', 'Artist', 'Teacher', 'Designer', 'Hacker', 'Pornstar', 'Model', 'Actress', 'Scientist', 'Nurse', 'Pilot', 'Chef', 'Writer', 'Musician'], num_samples),
-        'Height': np.random.uniform(150, 180, num_samples),
-        'Weight': np.random.uniform(45, 80, num_samples),
-        'Body type': np.random.choice(['Slim', 'Athletic', 'Curvy', 'Petite', 'Skinny', 'Average'], num_samples),
-        'Body Measurements': [f"{np.random.randint(80, 100)}-{np.random.randint(55, 65)}-{np.random.randint(85, 105)}" for _ in range(num_samples)],
-        'Hair color': np.random.choice(['Blonde', 'Brown', 'Black', 'Red', 'Purple', 'Green', 'Blue', 'Silver'], num_samples),
-        'Eye color': np.random.choice(['Blue', 'Green', 'Brown', 'Hazel', 'Gray', 'Amber'], num_samples),
-        'Bra/cup size': np.random.choice(['A', 'B', 'C', 'D', 'DD'], num_samples),
-        'Boobs': np.random.choice(['Natural', 'Enhanced'], num_samples),
-    }
-    df = pd.DataFrame(data)
-    df['Born'] = pd.to_datetime(df['Age'].apply(lambda age: datetime.now() - timedelta(days=age * 365)))
-    df['Born'] = df['Born'].dt.strftime('%Y-%m-%d')
+# Combine dataset names
+first_names = list(set(df['Firstname'].tolist() + additional_names['Firstname'].tolist() + predefined_first_names))
+last_names = list(set(df['Lastname'].tolist() + additional_names['Lastname'].tolist() + predefined_last_names))
+nicknames = df['Nickname'].tolist()
 
-    numerical_columns = ['Age', 'Height', 'Weight']
-    for col in numerical_columns:
-        df[col] = df[col].fillna(df[col].mean())
-        if np.any(np.isinf(df[col].astype(float))):
-            df[col] = df[col].replace([np.inf, -np.inf], df[col].mean())
+# Build character vocab
+first_name_chars = set(''.join(str(name) for name in first_names if pd.notna(name)))
+last_name_chars = set(''.join(str(name) for name in last_names if pd.notna(name)))
+nickname_chars = set(''.join(str(name) for name in nicknames if pd.notna(name)))
 
-    return df
+first_name_chars.add('\n')
+last_name_chars.add('\n')
+nickname_chars.add('\n')
 
-# Function to load dataset from dataset.csv or generate synthetic dataset
-def load_or_generate_dataset(num_samples=10000):
-    dataset_path = "dataset.csv"
-    if os.path.exists(dataset_path):
-        print(f"Loading dataset from {dataset_path}")
-        df = pd.read_csv(dataset_path)
-        # Ensure all required columns are present
-        required_columns = ['Firstname', 'Lastname', 'Nickname', 'Age', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 
-                            'Profession', 'Height', 'Weight', 'Body type', 'Body Measurements', 'Hair color', 'Eye color', 
-                            'Bra/cup size', 'Boobs']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise ValueError(f"dataset.csv is missing required columns: {missing_columns}")
-        return df
-    else:
-        print(f"No dataset.csv found, generating synthetic dataset with {num_samples} samples")
-        return generate_synthetic_dataset(num_samples)
+first_name_char_to_idx = {char: idx for idx, char in enumerate(sorted(first_name_chars))}
+last_name_char_to_idx = {char: idx for idx, char in enumerate(sorted(last_name_chars))}
+nickname_char_to_idx = {char: idx for idx, char in enumerate(sorted(nickname_chars))}
 
-# Preprocess the dataset with reordered columns
-def preprocess_data(df):
-    numerical_columns = ['Age', 'Height', 'Weight']
-    for col in numerical_columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-        df[col] = df[col].fillna(df[col].mean())
-        df[col] = df[col].clip(lower=df[col].mean() - 3*df[col].std(), upper=df[col].mean() + 3*df[col].std())
+first_name_idx_to_char = {idx: char for char, idx in first_name_char_to_idx.items()}
+last_name_idx_to_char = {idx: char for char, idx in last_name_char_to_idx.items()}
+nickname_idx_to_char = {idx: char for char, idx in nickname_char_to_idx.items()}
 
-    scaler_age = MinMaxScaler(feature_range=(0, 1))
-    scaler_height = MinMaxScaler(feature_range=(0, 1))
-    scaler_weight = MinMaxScaler(feature_range=(0, 1))
-    scaler_measurements = MinMaxScaler(feature_range=(0, 1))
+# Hyperparameters
+hidden_size = 256
+embedding_dim = 64
+num_layers = 1
+first_name_max_len = max(len(str(name)) for name in first_names if pd.notna(name)) + 1
+last_name_max_len = max(len(str(name)) for name in last_names if pd.notna(name)) + 1
+nickname_max_len = 20
 
-    df['Age'] = scaler_age.fit_transform(df[['Age']])
-    df['Height'] = scaler_height.fit_transform(df[['Height']])
-    df['Weight'] = scaler_weight.fit_transform(df[['Weight']])
+# Initialize name generators
+first_name_gen = NameGenerator(len(first_name_char_to_idx), hidden_size, embedding_dim, num_layers).to(device)
+last_name_gen = NameGenerator(len(last_name_char_to_idx), hidden_size, embedding_dim, num_layers).to(device)
+nickname_gen = NameGenerator(len(nickname_char_to_idx), hidden_size, embedding_dim, num_layers).to(device)
 
-    le_dict = {}
-    categorical_columns = ['Firstname', 'Lastname', 'Nickname', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Body type', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs']
-    for col in categorical_columns:
-        le = LabelEncoder()
-        df[col] = df[col].astype(str)
-        df[col] = le.fit_transform(df[col])
-        le_dict[col] = le
+# Training name generators
+def train_name_generator(model, names, char_to_idx, max_len, epochs=100):
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    model.train()
+    
+    for epoch in range(epochs):
+        total_loss = 0
+        for name in names:
+            if pd.isna(name):
+                continue
+            name = str(name) + '\n'
+            inputs = torch.tensor([char_to_idx[char] for char in name[:-1]], dtype=torch.long).unsqueeze(0).to(device)
+            targets = torch.tensor([char_to_idx[char] for char in name[1:]], dtype=torch.long).unsqueeze(0).to(device)
+            
+            hidden, cell = model.init_hidden(1)
+            optimizer.zero_grad()
+            
+            outputs, hidden, cell = model(inputs, hidden, cell)
+            loss = criterion(outputs.squeeze(), targets.squeeze())
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        
+        if (epoch + 1) % 20 == 0:
+            print(f'Epoch {(epoch + 1)}/{epochs}, Loss: {total_loss / len(names):.4f}')
 
-    measurements = np.array([list(map(int, m.split('-'))) for m in df['Body Measurements']])
-    measurements_scaled = scaler_measurements.fit_transform(measurements)
-    df['Body Measurements'] = measurements_scaled.tolist()
+train_name_generator(first_name_gen, first_names, first_name_char_to_idx, first_name_max_len)
+train_name_generator(last_name_gen, last_names, last_name_char_to_idx, last_name_max_len)
+train_name_generator(nickname_gen, nicknames, nickname_char_to_idx, nickname_max_len)
 
-    return df, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements
+# Nickname suffixes
+nickname_suffixes = [
+    'Star', 'Cosmo', 'Dreamer', 'Vibe', 'Guru', 'Nebula', 'Quantum', 'Spark', '42',
+    'Player', 'GamerX', 'Pro', 'ModelX', 'Starlet', 'Glam', 'Clone', 'NIM', 'Core'
+]
+print(f"Nickname settings: min_length=3, max_length={nickname_max_len}, suffixes={nickname_suffixes}")
 
-# Convert data to tensor with reordered columns
-def df_to_tensor(df):
-    categorical_columns = ['Firstname', 'Lastname', 'Nickname', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Body type', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs']
-    numerical_columns = ['Age', 'Height', 'Weight']
-    features = df[categorical_columns + numerical_columns].values
-    measurements = np.array(df['Body Measurements'].tolist())
-    features = np.hstack((features, measurements))
-
-    scaler_features = MinMaxScaler()
-    features = np.nan_to_num(features, nan=np.nanmean(features), posinf=np.nanmean(features), neginf=np.nanmean(features))
-    features = scaler_features.fit_transform(features)
-
-    if np.any(np.isnan(features)) or np.any(np.isinf(features)):
-        raise ValueError("Features contain NaN or infinite values")
-
-    return torch.FloatTensor(features), scaler_features
-
-# Train the model with self-improvement cycles and console logs
-def train_model(resume=False, le_dict=None, scaler_age=None, scaler_height=None, scaler_weight=None, scaler_measurements=None, scaler_features=None, df=None):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    input_dim = 19  # 13 categorical + 3 numerical + 3 measurements
-    hidden_dim = 256  # Increased hidden_dim to allow for more complex patterns
-    output_dim = 19
-    model = IdentityGenerator(input_dim, hidden_dim, output_dim).to(device)
-
-    criterion = nn.MSELoss(reduction='mean')
-    optimizer = optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6)
-
-    num_cycles = 10  # Reduced cycles since the model converges quickly
-    epochs_per_cycle = 50
-    batch_size = 64
-    cycle_progress_range = 100 / num_cycles
-
-    early_stopping_patience = 20
-    min_delta = 1e-4  # Increased min_delta to allow for smaller improvements
-    best_loss = float('inf')
-    patience_counter = 0
-    last_lr = optimizer.param_groups[0]['lr']
-    total_epochs_completed = 0
-
-    if resume and os.path.exists("checkpoint_model.pth"):
-        try:
-            checkpoint = torch.load("checkpoint_model.pth")
-            model.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            df = pd.read_csv("checkpoint_dataset.csv")
-            with open("checkpoint_encoders.pkl", "rb") as f:
-                checkpoint_encoders = pickle.load(f)
-                le_dict = checkpoint_encoders['le_dict']
-                scaler_age = checkpoint_encoders['scaler_age']
-                scaler_height = checkpoint_encoders['scaler_height']
-                scaler_weight = checkpoint_encoders['scaler_weight']
-                scaler_measurements = checkpoint_encoders['scaler_measurements']
-                scaler_features = checkpoint_encoders['scaler_features']
-            yield None, None, 0, "Resumed from checkpoint", []
-            yield model, device, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features
-            return
-        except Exception as e:
-            yield None, None, 0, f"Failed to resume: {e}", []
-            return
-
-    data_tensor, scaler_features = df_to_tensor(df)
-    data_tensor = data_tensor.to(device)
-
-    training_start_time = time.time()  # Start timing the entire training process
-    loss_history = []
-    for cycle in range(num_cycles):
-        cycle_start_progress = cycle * cycle_progress_range
-        print(f"Starting Cycle {cycle + 1}/{num_cycles}")
-        yield None, None, cycle_start_progress, f"Starting Cycle {cycle + 1}", loss_history
-
-        for epoch in range(epochs_per_cycle):
-            epoch_start_time = time.time()
-            model.train()
-            num_batches = len(df) // batch_size
-            epoch_loss = 0.0
-
-            indices = torch.randperm(len(data_tensor))
-            data_tensor = data_tensor[indices]
-
-            # Add small noise to the input data to prevent overfitting
-            noise = torch.randn_like(data_tensor) * 0.01
-            noisy_data = data_tensor + noise
-
-            for batch in range(num_batches):
-                start_idx = batch * batch_size
-                end_idx = start_idx + batch_size
-                batch_data = noisy_data[start_idx:end_idx]
-
-                optimizer.zero_grad()
-                outputs = model(batch_data)
-                loss = criterion(outputs, batch_data)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
-                epoch_loss += loss.item()
-
-            avg_epoch_loss = epoch_loss / num_batches
-
-            # Early stopping with tolerance
-            if avg_epoch_loss < best_loss - min_delta:
-                best_loss = avg_epoch_loss
-                patience_counter = 0
-                torch.save({
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'scheduler_state_dict': scheduler.state_dict(),
-                    'loss': best_loss
-                }, "best_model.pth")
-                df.to_csv("checkpoint_dataset.csv", index=False)
+# Generate names
+def generate_name(generator, char_to_idx, idx_to_char, max_len, device, name_type='firstname', existing_names=None, temperature=0.7):
+    generator.eval()
+    with torch.no_grad():
+        for _ in range(10):
+            name = []
+            if name_type in ['firstname', 'lastname']:
+                valid_starts = [name[0] for name in existing_names if name and isinstance(name, str) and len(name) > 0]
             else:
-                patience_counter += 1
-                if patience_counter >= early_stopping_patience:
-                    print(f"Early stopping triggered at Cycle {cycle + 1}, Epoch {epoch + 1}")
+                valid_starts = list(char_to_idx.keys())
+            start_char = random.choice(valid_starts if valid_starts else ['A'])
+            try:
+                char_idx = char_to_idx[start_char]
+            except KeyError:
+                print(f"Warning: '{start_char}' not in char_to_idx. Using 'A'.")
+                char_idx = char_to_idx.get('A', list(char_to_idx.values())[0])
+            input_char = torch.tensor([[char_idx]], dtype=torch.long).to(device)
+            
+            hidden, cell = generator.init_hidden(1)
+            
+            min_length = 3 if name_type == 'nickname' else 1
+            for i in range(max_len):
+                output, hidden, cell = generator(input_char, hidden, cell)
+                output_dist = output.squeeze().div(temperature).exp()
+                char_idx = torch.multinomial(output_dist, 1).item()
+                char = idx_to_char[char_idx]
+                
+                if char == '\n' and (name_type != 'nickname' or len(name) >= min_length):
                     break
+                if i == max_len - 1 and name_type == 'nickname' and len(name) < min_length:
+                    continue
+                name.append(char)
+                input_char = torch.tensor([[char_idx]], dtype=torch.long).to(device)
+            
+            generated_name = ''.join(name).replace('\n', '').capitalize()
+            
+            if name_type == 'nickname' and random.random() < 0.5:
+                suffix = random.choice(nickname_suffixes)
+                generated_name += suffix
+            
+            invalid_chars = set(', -')
+            if (len(generated_name) < min_length or
+                any(char in invalid_chars for char in generated_name) or
+                any(char not in char_to_idx for char in generated_name.lower())):
+                continue
+            
+            if existing_names and generated_name in existing_names:
+                continue
+            return generated_name
+        
+        if name_type == 'firstname':
+            return random.choice(predefined_first_names)
+        elif name_type == 'lastname':
+            return random.choice(predefined_last_names)
+        else:
+            return f"Nick{name_type.capitalize()}"
 
-            scheduler.step(avg_epoch_loss)
-            current_lr = scheduler.get_last_lr()[0]
-            # Reset patience counter if learning rate changes
-            if current_lr != last_lr:
-                patience_counter = 0
-                last_lr = current_lr
-            print(f"Learning Rate: {current_lr:.6f}")
+# Preprocess data
+le_dict = {}
+for column in ['Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Body type', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs']:
+    le = LabelEncoder()
+    df[column] = le.fit_transform(df[column])
+    le_dict[column] = le
 
-            loss_history.append(avg_epoch_loss)
-            epoch_progress = (epoch + 1) / epochs_per_cycle * cycle_progress_range
-            total_progress = cycle_start_progress + epoch_progress
+new_professions = ['Astrologer', 'Chef', 'DJ', 'Engineer', 'Gamer', 'Hacker', 'Pilot', 'Scientist', 'Streamer', 'Writer']
+df['Profession'] = le_dict['Profession'].inverse_transform(df['Profession'])
+print("Types in 'Profession' column before adding new professions:", df['Profession'].apply(type).unique())
+for prof in new_professions:
+    if prof not in df['Profession'].values:
+        new_row = df.iloc[0].copy()
+        new_row['Profession'] = prof
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+print("Types in 'Profession' column after adding new professions:", df['Profession'].apply(type).unique())
+le_dict['Profession'] = LabelEncoder()
+df['Profession'] = le_dict['Profession'].fit_transform(df['Profession'])
+print(f"Updated professions: {le_dict['Profession'].classes_}")
 
-            epoch_end_time = time.time()
-            epoch_time = epoch_end_time - epoch_start_time
-            speed = 1 / epoch_time if epoch_time > 0 else float('inf')
-            print(f"Cycle {cycle + 1}/{num_cycles}, Epoch {epoch + 1}/{epochs_per_cycle} | "
-                  f"Avg Loss: {avg_epoch_loss:.6f} | Time: {epoch_time:.2f}s | Speed: {speed:.2f} epochs/s")
+scaler_age = StandardScaler()
+scaler_height = StandardScaler()
+scaler_weight = StandardScaler()
+scaler_measurements = StandardScaler()
+scaler_features = StandardScaler()
 
-            status = f"Training Model (Cycle {cycle + 1}, Epoch {epoch + 1}/{epochs_per_cycle}) - Avg Loss: {avg_epoch_loss:.6f}"
-            yield None, None, total_progress, status, loss_history
+df['Age'] = scaler_age.fit_transform(df[['Age']])
+df['Height'] = scaler_height.fit_transform(df[['Height']])
+df['Weight'] = scaler_weight.fit_transform(df[['Weight']])
 
-            total_epochs_completed += 1
+body_measurements = df['Body Measurements'].str.split('-', expand=True).astype(float)
+df[['Bust', 'Waist', 'Hips']] = scaler_measurements.fit_transform(body_measurements)
 
-        if patience_counter >= early_stopping_patience:
-            break  # Exit the cycle loop if early stopping was triggered
+features = df[['Age', 'Height', 'Weight', 'Bust', 'Waist', 'Hips', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Body type', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs']].values
+features = scaler_features.fit_transform(features)
 
-    training_end_time = time.time()
-    total_training_time = training_end_time - training_start_time
-    print(f"Training Summary: Total Epochs: {total_epochs_completed}, Final Loss: {best_loss:.6f}, Total Time: {total_training_time:.2f}s")
+# Initialize model
+input_size = features.shape[1]
+output_size = features.shape[1]
+model = IdentityGenerator(input_size, hidden_size, output_size, num_layers).to(device)
 
-    yield model, device, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features
+# Training loop
+def train_model(model, features, cycles=5, epochs_per_cycle=20, verbose=False):
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    scaler = torch.amp.GradScaler('cuda')
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=epochs_per_cycle // 2, gamma=0.5)
+    losses = []
+    all_losses = []
+    total_epochs = 0
+    log_file = open('training_log.txt', 'w')
+    
+    print(f"Training with {len(features)} features, shape: {features.shape}")
+    
+    try:
+        for cycle in range(cycles):
+            print(f"Starting Cycle {cycle + 1}/{cycles}")
+            cycle_losses = []
+            for epoch in range(epochs_per_cycle):
+                model.train()
+                total_loss = 0
+                start_time = datetime.now()
+                
+                for i in range(0, len(features), 1):
+                    inputs = torch.tensor(features[i:i+1], dtype=torch.float32).to(device)
+                    targets = inputs.clone()
+                    
+                    hidden, cell = model.init_hidden(1)
+                    optimizer.zero_grad()
+                    
+                    with torch.amp.autocast('cuda'):
+                        outputs, hidden, cell = model(inputs, hidden, cell)
+                        outputs = outputs.squeeze(1)
+                        loss = criterion(outputs, targets)
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                    total_loss += loss.item()
+                
+                scheduler.step()
+                total_epochs += 1
+                avg_loss = total_loss / len(features)
+                cycle_losses.append(avg_loss)
+                all_losses.append(avg_loss)
+                epoch_time = (datetime.now() - start_time).total_seconds()
+                
+                log_message = f"Cycle {cycle + 1}/{cycles}, Epoch {epoch + 1}/{epochs_per_cycle} | Avg Loss: {avg_loss:.6f} | Time: {epoch_time:.2f}s | Speed: {1/epoch_time:.2f} epochs/s | LR: {scheduler.get_last_lr()[0]:.6f}\n"
+                log_file.write(log_message)
+                if verbose or (epoch + 1) % 10 == 0:
+                    print(log_message.strip())
+                
+                if len(all_losses) > 10:
+                    min_loss = min(all_losses[-11:-1])
+                    if avg_loss > min_loss * 1.1:
+                        print(f"Early stopping triggered (loss increase) at Cycle {cycle + 1}, Epoch {epoch + 1}")
+                        log_file.write(f"Early stopping (loss increase)\n")
+                        return all_losses, total_epochs
+                    recent_losses = all_losses[-11:-1]
+                    max_loss = max(recent_losses)
+                    if max_loss - avg_loss < 1e-6:
+                        print(f"Early stopping triggered (loss plateau) at Cycle {cycle + 1}, Epoch {epoch + 1}")
+                        log_file.write(f"Early stopping (loss plateau)\n")
+                        return all_losses, total_epochs
+                
+                if (epoch + 1) % 5 == 0:
+                    yield cycle_losses, total_epochs
+            
+            losses.extend(cycle_losses)
+            yield cycle_losses, total_epochs
+        
+        log_file.close()
+        print(f"Training completed: Total Epochs: {total_epochs}, Final Loss: {all_losses[-1]:.6f}, Total Time: {total_epochs * 0.084:.2f}s")
+        return all_losses, total_epochs
+    
+    except KeyboardInterrupt:
+        print("Training interrupted! Saving model state...")
+        log_file.write("Training interrupted\n")
+        torch.save(model.state_dict(), 'model_interrupted.pth')
+        log_file.close()
+        raise
 
-# Generate a new identity with reordered columns
-def generate_identity(model, device, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features):
+# Generate unique filename
+def generate_unique_filename(base_name):
+    while True:
+        random_suffix = secrets.token_hex(5).upper()[:11]  # 11-character hex string
+        filename = f"{base_name}_{random_suffix}.png"
+        if not os.path.exists(filename):
+            return filename
+        print(f"Filename {filename} already exists, generating a new suffix...")
+
+# Generate image with PG/NSFW option, style theme, location, and overall theme
+def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, style_theme="Cyberpunk", location="Cosmic Nebula", overall_theme="Ethereal Dreamscape"):
+    if selected_identity == "None" or df_identities is None or df_identities.empty:
+        return None, "Please generate identities and select one for image generation."
+    
+    try:
+        # Extract clone number and nickname
+        clone_number, nickname = selected_identity.split(": ")
+        row = df_identities[df_identities['Clone Number'] == clone_number].iloc[0]
+        
+        # Base prompt with new style theme, location, and overall theme
+        prompt = (
+            f"A cinematic shot of a futuristic female clone named {row['Nickname']}, {row['Age']} years old, "
+            f"with {row['Hair color'].lower()} hair and {row['Eye color'].lower()} eyes, "
+            f"with a {row['Body type'].lower()} build, body measurements {row['Body Measurements']}, "
+            f"height {row['Height']} cm, weight {row['Weight']} kg, "
+            f"in a {location.lower()} setting, styled in a {style_theme.lower()} aesthetic, "
+            f"within an overall {overall_theme.lower()} atmosphere, "
+            f"glowing with a {row['Cosmic Aura'].lower() if row['Cosmic Aura'] != 'None' else 'electric starlight'} aura, "
+            f"radiating a {row['Energy Signature'].lower()} energy, "
+            f"adorned with a {row['Cosmic Tattoo'].lower() if row['Cosmic Tattoo'] != 'None' else 'subtle cosmic pattern'} tattoo, "
+            f"accompanied by a {row['Cosmic Pet'].lower() if row['Cosmic Pet'] != 'None' else 'faint cosmic sparkle'}, "
+            f"embodying the destiny of a {row['Cosmic Destiny'].lower() if row['Cosmic Destiny'] != 'None' else 'stellar traveler'}"
+        )
+        
+        # Add clothing for PG-rated images
+        if not allow_nsfw:
+            upper = random.choice(upper_clothing_list)
+            lower = random.choice(lower_clothing_list)
+            footwear = random.choice(footwear_list)
+            clothing_prompt = f", wearing a {upper.lower()}, {lower.lower()}, and {footwear.lower()}"
+            prompt += clothing_prompt
+            print(f"Generating FLUX.1 [dev] image for {selected_identity} with PG-rated prompt: {prompt}")
+            print(f"DEBUG: Selected clothing - Upper: {upper}, Lower: {lower}, Footwear: {footwear}")
+            print(f"DEBUG: Style Theme: {style_theme}, Location: {location}, Overall Theme: {overall_theme}")
+        else:
+            prompt += ", potentially NSFW, may include nudity or suggestive elements"
+            print(f"Generating FLUX.1 [dev] image for {selected_identity} with NSFW prompt: {prompt}")
+            print(f"DEBUG: Style Theme: {style_theme}, Location: {location}, Overall Theme: {overall_theme}")
+        
+        # Workflow
+        workflow = {
+            "9": {
+                "inputs": {"filename_prefix": f"{clone_number}_{nickname}", "images": ["8", 0]},
+                "class_type": "SaveImage"
+            },
+            "8": {
+                "inputs": {"samples": ["13", 1], "vae": ["10", 0]},
+                "class_type": "VAEDecode"
+            },
+            "10": {
+                "inputs": {"vae_name": "ae.safetensors"},
+                "class_type": "VAELoader"
+            },
+            "13": {
+                "inputs": {
+                    "noise": ["25", 0],
+                    "guider": ["22", 0],
+                    "sampler": ["16", 0],
+                    "sigmas": ["17", 0],
+                    "latent_image": ["41", 0]
+                },
+                "class_type": "SamplerCustomAdvanced"
+            },
+            "16": {
+                "inputs": {"sampler_name": "euler"},
+                "class_type": "KSamplerSelect"
+            },
+            "17": {
+                "inputs": {"model": ["30", 0], "scheduler": "beta", "steps": 30, "denoise": 1.0},
+                "class_type": "BasicScheduler"
+            },
+            "22": {
+                "inputs": {"model": ["63", 0], "conditioning": ["26", 0]},
+                "class_type": "BasicGuider"
+            },
+            "25": {
+                "inputs": {"noise_seed": int(time.time()), "noise_mode": "randomize"},
+                "class_type": "RandomNoise"
+            },
+            "26": {
+                "inputs": {"conditioning": ["45", 0], "guidance": 3.5},
+                "class_type": "FluxGuidance"
+            },
+            "30": {
+                "inputs": {
+                    "model": ["12", 0],
+                    "width": 768,
+                    "height": 768,
+                    "max_shift": 1.15,
+                    "base_shift": 0.5
+                },
+                "class_type": "ModelSamplingFlux"
+            },
+            "41": {
+                "inputs": {"width": 768, "height": 768, "batch_size": 1},
+                "class_type": "EmptyLatentImage"
+            },
+            "45": {
+                "inputs": {"text": prompt, "clip": ["63", 1]},
+                "class_type": "CLIPTextEncode"
+            },
+            "59": {
+                "inputs": {
+                    "clip_name1": "t5xxl_fp16.safetensors",
+                    "clip_name2": "godessProjectFLUX_clipLFP8.safetensors",
+                    "clip_name3": "clip_g.safetensors"
+                },
+                "class_type": "TripleCLIPLoader"
+            },
+            "63": {
+                "inputs": {
+                    "model": ["12", 0],
+                    "clip": ["59", 0],
+                    "lora_01": "None",
+                    "strength_01": 0.0,
+                    "lora_02": "None",
+                    "strength_02": 0.0,
+                    "lora_03": "None",
+                    "strength_03": 0.0,
+                    "lora_04": "None",
+                    "strength_04": 0.0
+                },
+                "class_type": "Lora Loader Stack (rgthree)"
+            },
+            "12": {
+                "inputs": {"unet_name": "acornIsSpinningFLUX_devfp8V11.safetensors", "weight_dtype": "fp8_e4m3fn"},
+                "class_type": "UNETLoader"
+            }
+        }
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        comfyui_url = "http://127.0.0.1:8188"
+        response = requests.post(
+            f"{comfyui_url}/prompt",
+            json={"prompt": workflow},
+            headers={"Content-Type": "application/json"},
+            timeout=60
+        )
+        response.raise_for_status()
+        result = response.json()
+        prompt_id = result.get("prompt_id")
+        print(f"Submitted prompt with ID: {prompt_id}")
+        
+        base_name = nickname.replace(' ', '').lower()
+        output_path = generate_unique_filename(base_name)
+        start_time = time.time()
+        while time.time() - start_time < 900:
+            history = requests.get(f"{comfyui_url}/history/{prompt_id}").json()
+            if prompt_id in history and history[prompt_id]["status"]["completed"]:
+                for node_id, node_output in history[prompt_id]["outputs"].items():
+                    if node_id == "9" and "images" in node_output:
+                        image_info = node_output["images"][0]
+                        image_filename = image_info.get("filename", f"{clone_number}_{nickname}.png")
+                        image_subfolder = image_info.get("subfolder", "")
+                        image_type = image_info.get("type", "output")
+                        image_url = f"{comfyui_url}/view?filename={image_filename}&subfolder={image_subfolder}&type={image_type}"
+                        image_response = requests.get(image_url)
+                        if image_response.status_code == 200:
+                            image = Image.open(io.BytesIO(image_response.content))
+                            image.save(output_path)
+                            print(f"Image saved as {output_path}")
+                            return output_path, f"Image generated successfully for {selected_identity}."
+                print("Error: No image found in workflow output")
+                return None, "Error: No image found in workflow output"
+            time.sleep(2)
+        
+        print("Image generation timed out after 15 minutes.")
+        return None, "Image generation timed out after 15 minutes."
+    
+    except requests.exceptions.RequestException as e:
+        print(f"ComfyUI API error: {str(e)}")
+        if 'response' in locals():
+            print(f"API response: {response.text}")
+        with open('error_log.txt', 'a') as f:
+            f.write(f"{datetime.now()}: ComfyUI API error for {selected_identity}: {str(e)}\n")
+        return None, f"ComfyUI API error: {str(e)}"
+    except Exception as e:
+        print(f"Unexpected error in generate_flux_image: {str(e)}")
+        with open('error_log.txt', 'a') as f:
+            f.write(f"{datetime.now()}: Error generating image for {selected_identity}: {str(e)}\n")
+        return None, f"Unexpected error: {str(e)}"
+    finally:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+# Batch image generation with new options
+def generate_images_batch(df_identities, batch_size=10, allow_nsfw=False, style_theme="Cyberpunk", location="Cosmic Nebula", overall_theme="Ethereal Dreamscape"):
+    if df_identities is None or df_identities.empty:
+        yield None, "No identities available for image generation.", ["No images generated yet."]
+        return
+    
+    total_identities = len(df_identities)
+    print(f"Starting batch image generation for {total_identities} identities, batch size: {batch_size}, NSFW: {allow_nsfw}, Style Theme: {style_theme}, Location: {location}, Overall Theme: {overall_theme}")
+    
+    for start_idx in range(0, total_identities, batch_size):
+        end_idx = min(start_idx + batch_size, total_identities)
+        batch = df_identities.iloc[start_idx:end_idx]
+        print(f"Processing batch {start_idx + 1}-{end_idx} of {total_identities}")
+        
+        for idx, row in batch.iterrows():
+            selected_identity = f"{row['Clone Number']}: {row['Nickname']}"
+            print(f"Generating image for {selected_identity} in batch")
+            image_path, status = generate_flux_image(selected_identity, df_identities, allow_nsfw, style_theme, location, overall_theme)
+            if image_path:
+                print(f"Batch image generated: {image_path}")
+            else:
+                print(f"Batch image failed for {selected_identity}: {status}")
+        
+        gallery_images = display_image_gallery(df_identities)
+        progress = (end_idx / total_identities) * 100
+        yield None, f"Generated images for {end_idx}/{total_identities} identities", gallery_images, progress
+        time.sleep(1)
+
+    yield None, "Batch image generation complete.", gallery_images, 100
+
+# Display image gallery
+def display_image_gallery(df_identities):
+    print("DEBUG: Entering display_image_gallery")
+    if df_identities is None or df_identities.empty:
+        print("DEBUG: DataFrame is None or empty, returning default message")
+        return ["No images generated yet."]
+    
+    image_paths = []
+    for _, row in df_identities.iterrows():
+        nickname = row['Nickname'].replace(' ', '').lower()
+        pattern = f"{nickname}_*.png"
+        matching_files = glob.glob(pattern)
+        for image_path in matching_files:
+            if os.path.exists(image_path):
+                image_paths.append(image_path)
+                print(f"DEBUG: Found image: {image_path}")
+    
+    if not image_paths:
+        print("DEBUG: No images found, returning default message")
+        return ["No images generated yet."]
+    
+    print(f"DEBUG: Returning {len(image_paths)} images for gallery")
+    return image_paths
+
+# Enhanced suggest_caption function
+def suggest_caption(row):
+    traits = [
+        f"{row['Nickname']}, a {row['Profession'].lower()}",
+        f"with {row['Hair color'].lower()} hair",
+        f"glowing with {row['Cosmic Aura'].lower() if row['Cosmic Aura'] != 'None' else 'electric starlight'}",
+        f"destined as a {row['Cosmic Destiny'].lower() if row['Cosmic Destiny'] != 'None' else 'stellar traveler'}"
+    ]
+    if row['Cosmic Pet'] != 'None':
+        traits.append(f"with her {row['Cosmic Pet'].lower()}")
+    if row['Cosmic Hobby'] != 'None':
+        traits.append(f"enjoying {row['Cosmic Hobby'].lower()}")
+    return f"{random.choice(traits)} shines in V24.32! 🌌 #CosmicDreams #AIArt"
+
+# Share image to X with suggested caption
+def share_to_x(image_path, caption, df_identities, selected_identity):
+    if not image_path or not selected_identity or selected_identity == "None":
+        return "Error: Please select an identity and generate an image first."
+    
+    try:
+        clone_number, nickname = selected_identity.split(": ")
+        row = df_identities[df_identities['Clone Number'] == clone_number].iloc[0]
+        
+        # Use suggested caption if none provided
+        if not caption:
+            caption = suggest_caption(row)
+            print(f"Using suggested caption: {caption}")
+        
+        # Load X API credentials
+        consumer_key = os.getenv("X_CONSUMER_KEY")
+        consumer_secret = os.getenv("X_CONSUMER_SECRET")
+        access_token = os.getenv("X_ACCESS_TOKEN")
+        access_token_secret = os.getenv("X_ACCESS_TOKEN_SECRET")
+        
+        if not all([consumer_key, consumer_secret, access_token, access_token_secret]):
+            return "Error: X API credentials not found in environment variables."
+        
+        client = tweepy.Client(
+            consumer_key=consumer_key,
+            consumer_secret=consumer_secret,
+            access_token=access_token,
+            access_token_secret=access_token_secret
+        )
+        
+        api = tweepy.API(tweepy.OAuth1UserHandler(
+            consumer_key, consumer_secret, access_token, access_token_secret
+        ))
+        media = api.media_upload(image_path)
+        client.create_tweet(text=caption, media_ids=[media.media_id])
+        
+        return f"Successfully shared to X: {caption}"
+    except Exception as e:
+        error_msg = f"Error sharing to X: {str(e)}"
+        print(error_msg)
+        with open('error_log.txt', 'a') as f:
+            f.write(f"{datetime.now()}: {error_msg}\n")
+        return error_msg
+
+# Generate identities
+def generate_identities_gui(num_identities, resume_training, profession_filter, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features, df, first_names, last_names, nicknames, first_name_gen, last_name_gen, nickname_gen, additional_names):
+    global model
+    if resume_training and os.path.exists('model.pth'):
+        model.load_state_dict(torch.load('model.pth'))
+    
+    generated_firstnames = set()
+    generated_lastnames = set()
+    generated_nicknames = set()
+    identities = []
+    losses = []
+    total_epochs = 0
+    cycles = 5
+    epochs_per_cycle = 20
+    
+    for cycle_losses, cycle_epochs in train_model(model, features, verbose=False):
+        losses.extend(cycle_losses)
+        total_epochs = cycle_epochs
+        current_cycle = min((total_epochs - 1) // epochs_per_cycle + 1, cycles)
+        current_epoch = (total_epochs - 1) % epochs_per_cycle + 1
+        progress = min((total_epochs / (cycles * epochs_per_cycle)) * 100, 100)
+        fig, ax = plt.subplots()
+        fig.patch.set_alpha(0)
+        ax.set_facecolor('#0a0a28')
+        ax.plot(losses, color='#00e6e6', linewidth=2, label='Loss')
+        ax.set_title('Training Loss', color='#00ffcc', fontsize=14, pad=15)
+        ax.set_xlabel('Epoch', color='#00ffcc', fontsize=12)
+        ax.set_ylabel('Loss', color='#00ffcc', fontsize=12)
+        ax.tick_params(axis='both', colors='#00e6e6')
+        ax.grid(True, color='#00e6e6', alpha=0.3, linestyle='--')
+        ax.spines['top'].set_color('#00e6e6')
+        ax.spines['bottom'].set_color('#00e6e6')
+        ax.spines['left'].set_color('#00e6e6')
+        ax.spines['right'].set_color('#00e6e6')
+        fig.savefig("loss_plot.png")
+        yield None, None, None, gr.update(choices=["None"]), None, progress, f"Training: Cycle {current_cycle}/{cycles}, Epoch {current_epoch}/{epochs_per_cycle}", fig
+        time.sleep(0.1)
+        plt.close(fig)
+    
+    torch.save(model.state_dict(), 'model.pth')
+    print(f"Training Summary: Total Epochs: {total_epochs}, Final Loss: {losses[-1]:.6f}, Total Time: {total_epochs * 0.084:.2f}s")
+    
     model.eval()
     with torch.no_grad():
-        noise = torch.randn(1, 19).to(device)
-        generated = model(noise).cpu().numpy()[0]
-
-        generated_full = scaler_features.inverse_transform(generated.reshape(1, -1))[0]
-
-        identity = {}
-        categorical_columns = ['Firstname', 'Lastname', 'Nickname', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Body type', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs']
-
-        for idx, col in enumerate(categorical_columns):
-            value = int(round(generated_full[idx]))
-            num_classes = len(le_dict[col].classes_)
-            value = max(0, min(value, num_classes - 1))
-            identity[col] = le_dict[col].inverse_transform([value])[0]
-
-        identity['Age'] = float(scaler_age.inverse_transform([[generated_full[13]]])[0][0])
-        identity['Height'] = float(scaler_height.inverse_transform([[generated_full[14]]])[0][0])
-        identity['Weight'] = float(scaler_weight.inverse_transform([[generated_full[15]]])[0][0])
-
-        measurements = generated_full[16:19]
-        measurements = scaler_measurements.inverse_transform([measurements])[0]
-        measurements = np.clip(measurements, [80, 55, 85], [100, 65, 105])
-        identity['Body Measurements'] = f"{int(measurements[0])}-{int(measurements[1])}-{int(measurements[2])}"
-
-        identity['Age'] = max(18, min(40, round(identity['Age'])))
-        identity['Height'] = max(150, min(180, round(identity['Height'])))
-        identity['Weight'] = max(45, min(80, round(identity['Weight'])))
-
-        return identity
-
-# Filter generated identities
-def filter_identity(identity):
-    try:
-        if not (18 <= identity['Age'] <= 40):
-            return False
-        if not (150 <= identity['Height'] <= 180):
-            return False
-        if not (45 <= identity['Weight'] <= 80):
-            return False
-
-        measurements = identity['Body Measurements'].split('-')
-        if len(measurements) != 3:
-            return False
-
-        required_fields = ['Hair color', 'Eye color', 'Body type', 'Bra/cup size', 'Boobs', 'Firstname', 'Lastname']
-        for field in required_fields:
-            if not identity.get(field):
-                return False
-
-        return True
-    except Exception as e:
-        return False
-
-# Gradio interface function with reordered output, Clone Number, real-time graph, and progress bar
-def generate_identities_gui(num_identities, resume_training, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features, df):
-    yield None, None, 0, "Starting Training...", None
-
-    train_gen = train_model(resume=resume_training, le_dict=le_dict, scaler_age=scaler_age, scaler_height=scaler_height, scaler_weight=scaler_weight, scaler_measurements=scaler_measurements, scaler_features=scaler_features, df=df)
-    model = None
-    device = None
-
-    for train_output in train_gen:
-        if isinstance(train_output, tuple) and len(train_output) == 8:
-            model, device, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features = train_output
-            yield None, None, 50, "Model Loaded - Starting Generation", None
-            break
-        _, _, progress, status, loss_history = train_output
-        if loss_history:
-            loss_df = pd.DataFrame({
-                'Epoch': list(range(1, len(loss_history) + 1)),
-                'Loss': loss_history
-            })
-            fig = px.line(loss_df, x='Epoch', y='Loss', title="Training Loss Over Time")
-            fig.update_layout(
-                plot_bgcolor='rgba(10, 10, 40, 0.8)',
-                paper_bgcolor='rgba(10, 10, 40, 0.8)',
-                font_color='#00ffcc',
-                title_font_color='#00ffcc',
-                xaxis=dict(gridcolor='rgba(0, 230, 230, 0.2)'),
-                yaxis=dict(gridcolor='rgba(0, 230, 230, 0.2)')
-            )
-            loss_plot = fig
-        else:
-            loss_plot = None
-        yield None, None, progress, status, loss_plot
-
-    if model is None:
-        yield None, None, 50, "Training failed - cannot generate identities", None
-        return
-
-    generation_start_time = time.time()
-    identities = []
-    num_identities = int(num_identities)
-    for i in range(num_identities):
-        progress_value = 50 + (i / num_identities) * 25
-        status = f"Generating Identity {i+1}/{num_identities}"
-        yield None, None, progress_value, status, None
-        identity = generate_identity(model, device, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features)
-        if identity:
-            # Add Clone Number as a string
-            identity['Clone Number'] = f"CLN-{str(i+1).zfill(3)}"
+        for i in range(num_identities):
+            firstname = generate_name(first_name_gen, first_name_char_to_idx, first_name_idx_to_char, first_name_max_len, device, name_type='firstname', existing_names=generated_firstnames, temperature=0.7)
+            lastname = generate_name(last_name_gen, last_name_char_to_idx, last_name_idx_to_char, last_name_max_len, device, name_type='lastname', existing_names=generated_lastnames, temperature=0.7)
+            nickname = generate_name(nickname_gen, nickname_char_to_idx, nickname_idx_to_char, nickname_max_len, device, name_type='nickname', existing_names=generated_nicknames, temperature=0.7)
+            
+            generated_firstnames.add(firstname)
+            generated_lastnames.add(lastname)
+            generated_nicknames.add(nickname)
+            
+            input_features = torch.tensor(scaler_features.transform(df.sample(1)[['Age', 'Height', 'Weight', 'Bust', 'Waist', 'Hips', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Body type', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs']].values), dtype=torch.float32).to(device)
+            hidden, cell = model.init_hidden(1)
+            output, _, _ = model(input_features, hidden, cell)
+            output = scaler_features.inverse_transform(output.cpu().numpy().squeeze(1))
+            
+            age = int(scaler_age.inverse_transform([[output[0, 0]]])[0, 0])
+            height = int(scaler_height.inverse_transform([[output[0, 1]]])[0, 0])
+            weight = int(scaler_weight.inverse_transform([[output[0, 2]]])[0, 0])
+            bust, waist, hips = scaler_measurements.inverse_transform([output[0, 3:6]])[0]
+            nationality = le_dict['Nationality'].inverse_transform([int(output[0, 6])])[0]
+            ethnicity = le_dict['Ethnicity'].inverse_transform([int(output[0, 7])])[0]
+            birthplace = le_dict['Birthplace'].inverse_transform([int(output[0, 8])])[0]
+            profession = le_dict['Profession'].inverse_transform([int(output[0, 9])])[0]
+            body_type = le_dict['Body type'].inverse_transform([int(output[0, 10])])[0]
+            hair_color = le_dict['Hair color'].inverse_transform([int(output[0, 11])])[0]
+            eye_color = le_dict['Eye color'].inverse_transform([int(output[0, 12])])[0]
+            bra_size = le_dict['Bra/cup size'].inverse_transform([int(output[0, 13])])[0]
+            boobs = le_dict['Boobs'].inverse_transform([int(output[0, 14])])[0]
+            
+            born = (datetime.now() - timedelta(days=age * 365)).strftime('%Y-%m-%d')
+            body_measurements = f"{int(bust)}-{int(waist)}-{int(hips)}"
+            
+            sister_of = 'None'
+            if random.random() < 0.1 and identities:
+                sister = random.choice(identities)
+                sister_of = sister['Clone Number']
+                print(f"CLN-{i+1:03d} is a sister of {sister_of}")
+            
+            energy_signature = random.choice([
+                'Fiery Cosmic Blaze', 'Ethereal Starlight', 'Sizzling Cosmic Fizzle', 
+                'Soulful Cosmic Pulse', 'Insightful Ocean Whisper', 'Electric Starlight', 
+                'Vibrant Sky Breeze', 'Quantum Moon Glow', 'Nebula Heartbeat'
+            ])
+            
+            cosmic_tattoo = 'None'
+            if random.random() < 0.05:
+                cosmic_tattoo = random.choice(['Starfield Nebula', 'Galactic Spiral', 'Pulsar Wave'])
+                print(f"CLN-{i+1:03d} has a Cosmic Tattoo: {cosmic_tattoo}")
+            
+            cosmic_playlist = 'None'
+            if random.random() < 0.03:
+                cosmic_playlist = random.choice([
+                    'Zoe’s Synthwave Nebula Mix', 'Clara’s Pulsar Dance Beat', 
+                    'Gemma’s Cosmic Chill Vibes', 'Luna’s Electric Star Jams'
+                ])
+                print(f"CLN-{i+1:03d} has a Cosmic Playlist: {cosmic_playlist}")
+            
+            cosmic_pet = 'None'
+            if random.random() < 0.02:
+                cosmic_pet = random.choice(['Nebula Kitten', 'Pulsar Pup', 'Quantum Finch'])
+                print(f"CLN-{i+1:03d} has a Cosmic Pet: {cosmic_pet}")
+            
+            cosmic_artifact = 'None'
+            if random.random() < 0.01:
+                cosmic_artifact = random.choice(['Quantum Locket', 'Stellar Compass', 'Nebula Orb'])
+                print(f"CLN-{i+1:03d} has a Cosmic Artifact: {cosmic_artifact}")
+            
+            cosmic_aura = 'None'
+            if random.random() < 0.015:
+                cosmic_aura = random.choice(['Aurora Veil', 'Stellar Mist', 'Pulsar Halo'])
+                print(f"CLN-{i+1:03d} has a Cosmic Aura: {cosmic_aura}")
+            
+            cosmic_hobby = 'None'
+            if random.random() < 0.02:
+                cosmic_hobby = random.choice(['Nebula Painting', 'Quantum Dance', 'Starlight Poetry'])
+                print(f"CLN-{i+1:03d} has a Cosmic Hobby: {cosmic_hobby}")
+            
+            cosmic_destiny = 'None'
+            if random.random() < 0.025:
+                cosmic_destiny = random.choice(['Nebula Voyager', 'Pulsar Poet', 'Quantum Pathfinder'])
+                print(f"CLN-{i+1:03d} has a Cosmic Destiny: {cosmic_destiny}")
+            
+            identity = {
+                'Clone Number': f'CLN-{i+1:03d}',
+                'Firstname': firstname,
+                'Lastname': lastname,
+                'Nickname': nickname,
+                'Age': age,
+                'Born': born,
+                'Nationality': nationality,
+                'Ethnicity': ethnicity,
+                'Birthplace': birthplace,
+                'Profession': profession,
+                'Height': height,
+                'Weight': weight,
+                'Body type': body_type,
+                'Body Measurements': body_measurements,
+                'Hair color': hair_color,
+                'Eye color': eye_color,
+                'Bra/cup size': bra_size,
+                'Boobs': boobs,
+                'Sister Of': sister_of,
+                'Energy Signature': energy_signature,
+                'Cosmic Tattoo': cosmic_tattoo,
+                'Cosmic Playlist': cosmic_playlist,
+                'Cosmic Pet': cosmic_pet,
+                'Cosmic Artifact': cosmic_artifact,
+                'Cosmic Aura': cosmic_aura,
+                'Cosmic Hobby': cosmic_hobby,
+                'Cosmic Destiny': cosmic_destiny
+            }
             identities.append(identity)
+            
+            df_identities = pd.DataFrame(identities)
+            print(f"Rendering DataFrame with columns: {list(df_identities.columns)}")
+            with open('training_log.txt', 'a') as log_file:
+                log_file.write(f"DataFrame columns: {list(df_identities.columns)}\n")
+            
+            if profession_filter != 'All':
+                filtered_identities = df_identities[df_identities['Profession'] == profession_filter]
+                print(f"Filtered {len(filtered_identities)} identities with profession: {profession_filter}")
+                df_identities = filtered_identities
+            
+            try:
+                df_identities.to_csv('generated_cha_identities.csv', index=False)
+            except PermissionError:
+                print("Error: Cannot write to generated_cha_identities.csv. Check permissions.")
+                raise
+            
+            try:
+                additional_names = pd.concat([additional_names, pd.DataFrame([{'Firstname': firstname, 'Lastname': lastname}])], ignore_index=True)
+                additional_names.to_csv('previous_names.csv', index=False)
+            except PermissionError:
+                print("Error: Cannot write to previous_names.csv. Check permissions.")
+                raise
+            
+            identity_list = [f"{row['Clone Number']}: {row['Nickname']}" for _, row in df_identities.iterrows()]
+            identity_list.insert(0, "None")
+            
+            fig, ax = plt.subplots()
+            fig.patch.set_alpha(0)
+            ax.set_facecolor('#0a0a28')
+            ax.plot(losses, color='#00e6e6', linewidth=2, label='Loss')
+            ax.set_title('Training Loss', color='#00ffcc', fontsize=14, pad=15)
+            ax.set_xlabel('Epoch', color='#00ffcc', fontsize=12)
+            ax.set_ylabel('Loss', color='#00ffcc', fontsize=12)
+            ax.tick_params(axis='both', colors='#00e6e6')
+            ax.grid(True, color='#00e6e6', alpha=0.3, linestyle='--')
+            ax.spines['top'].set_color('#00e6e6')
+            ax.spines['bottom'].set_color('#00e6e6')
+            ax.spines['left'].set_color('#00e6e6')
+            ax.spines['right'].set_color('#00e6e6')
+            fig.savefig("loss_plot.png")
+            yield df_identities, 'generated_cha_identities.csv', "loss_plot.png", gr.update(choices=identity_list), None, progress, f"Generated {i+1}/{num_identities} identities", fig
+            time.sleep(0.1)
+            plt.close(fig)
+    
+    yield df_identities, 'generated_cha_identities.csv', "loss_plot.png", gr.update(choices=identity_list), None, 100, "Generation Complete", fig
 
-    generation_end_time = time.time()
-    generation_time = generation_end_time - generation_start_time
-    print(f"Generated {len(identities)} identities in {generation_time:.2f}s")
+def generate_identities_gui_wrapper(num_identities, resume_training, profession_filter):
+    print("Available professions in dropdown:", le_dict['Profession'].classes_)
+    for result in generate_identities_gui(num_identities, resume_training, profession_filter, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features, df, first_names, last_names, nicknames, first_name_gen, last_name_gen, nickname_gen, additional_names):
+        yield result
 
-    filtering_start_time = time.time()
-    filtered_identities = []
-    for i, identity in enumerate(identities):
-        progress_value = 75 + (i / len(identities)) * 25
-        status = f"Filtering Identity {i+1}/{len(identities)}"
-        yield None, None, progress_value, status, None
-        if filter_identity(identity):
-            filtered_identities.append(identity)
-
-    filtering_end_time = time.time()
-    filtering_time = filtering_end_time - filtering_start_time
-    print(f"Filtered {len(filtered_identities)} identities (out of {len(identities)}) in {filtering_time:.2f}s")
-
-    if filtered_identities:
-        desired_columns = ['Clone Number', 'Firstname', 'Lastname', 'Nickname', 'Age', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Height', 'Weight', 'Body type', 'Body Measurements', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs']
-        df_identities = pd.DataFrame(filtered_identities)
-        df_identities = df_identities[desired_columns]
-        df_identities['Age'] = df_identities['Age'].round(0).astype(int)
-        df_identities['Height'] = df_identities['Height'].round(0).astype(int)
-        df_identities['Weight'] = df_identities['Weight'].round(0).astype(int)
-        df_identities['Body Measurements'] = df_identities['Body Measurements'].apply(
-            lambda x: '-'.join(str(int(float(v))) for v in x.split('-'))
-        )
-        csv_path = "generated_cha_identities.csv"
-        df_identities.to_csv(csv_path, index=False)
-        yield df_identities, csv_path, 100, "Generation Complete", None
-    else:
-        yield None, None, 100, "Generation Complete - No valid identities", None
-
-# Wrapper for Gradio
-def generate_identities_gui_wrapper(num_identities, resume_training):
-    df = load_or_generate_dataset()
-    df, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements = preprocess_data(df)
-    data_tensor, scaler_features = df_to_tensor(df)
-    yield from generate_identities_gui(num_identities, resume_training, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features, df)
-
-# Simplified CSS for Matrix integration, including loss plot styling
+# CSS
 custom_css = """
 body {
     background: transparent;
     color: #00e6e6;
 }
 .gradio-container {
-    max-width: 600px;
+    max-width: 3200px;
     margin: auto;
     border: 2px solid #00e6e6;
     border-radius: 15px;
@@ -471,24 +950,352 @@ button:hover {
 }
 .dataframe-container {
     width: 100% !important;
+    overflow-x: auto;
     background: rgba(20, 20, 60, 0.9);
     border: 1px solid #00e6e6;
     border-radius: 10px;
     padding: 10px;
 }
 .dataframe table {
-    width: 100%;
+    width: auto;
+    min-width: 100%;
     border-collapse: collapse;
+    font-size: 14px;
 }
 .dataframe th, .dataframe td {
-    padding: 8px;
+    padding: 6px;
     text-align: left;
     border: 1px solid #00e6e6;
-    white-space: normal !important;
-    max-width: 150px;
+    white-space: nowrap;
+    max-width: 70px;
+    min-width: 50px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    position: relative;
 }
 .dataframe th {
     background: rgba(0, 230, 230, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+.dataframe-container::-webkit-scrollbar {
+    height: 8px;
+}
+.dataframe-container::-webkit-scrollbar-track {
+    background: #0a0a28;
+}
+.dataframe-container::-webkit-scrollbar-thumb {
+    background: #00e6e6;
+    border-radius: 4px;
+}
+.dataframe-container::-webkit-scrollbar-thumb:hover {
+    background: #00ffcc;
+}
+.dataframe tr:has(td:last-child:not(:contains("None"))) {
+    background: rgba(0, 255, 255, 0.2) !important;
+}
+.dataframe tr:has(td:contains("Fiery")) {
+    box-shadow: 0 0 10px rgba(255, 100, 100, 0.5) !important;
+}
+.dataframe tr:has(td:contains("Ethereal")) {
+    box-shadow: 0 0 10px rgba(100, 255, 255, 0.5) !important;
+}
+.dataframe tr:has(td:contains("Sizzling")) {
+    box-shadow: 0 0 10px rgba(255, 50, 50, 0.7) !important;
+}
+.dataframe tr:has(td:contains("Insightful")) {
+    box-shadow: 0 0 10px rgba(50, 150, 255, 0.7) !important;
+}
+.dataframe tr:has(td:contains("Electric")) {
+    box-shadow: 0 0 10px rgba(255, 255, 50, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Vibrant")) {
+    box-shadow: 0 0 10px rgba(200, 50, 200, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Quantum")) {
+    box-shadow: 0 0 10px rgba(150, 50, 255, 0.7) !important;
+}
+.dataframe tr:has(td:contains("Nebula")) {
+    box-shadow: 0 0 10px rgba(255, 50, 150, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Quantum Locket")) {
+    box-shadow: 0 0 10px rgba(50, 255, 200, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Quantum Locket")):hover::after {
+    content: "A locket containing a fragment of quantum energy";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Stellar Compass")) {
+    box-shadow: 0 0 10px rgba(50, 255, 200, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Stellar Compass")):hover::after {
+    content: "A compass guiding through the stars";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Nebula Orb")) {
+    box-shadow: 0 0 10px rgba(50, 255, 200, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Nebula Orb")):hover::after {
+    content: "An orb swirling with nebula gases";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Nebula Kitten")) {
+    box-shadow: 0 0 10px rgba(255, 255, 50, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Nebula Kitten")):hover::after {
+    content: "A fluffy kitten with nebula fur";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Pulsar Pup")) {
+    box-shadow: 0 0 10px rgba(255, 255, 50, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Pulsar Pup")):hover::after {
+    content: "A playful pup with pulsing energy";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Quantum Finch")) {
+    box-shadow: 0 0 10px rgba(255, 255, 50, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Quantum Finch")):hover::after {
+    content: "A tiny bird with quantum wings";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Aurora Veil")) {
+    box-shadow: 0 0 10px rgba(192, 192, 192, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Aurora Veil")):hover::after {
+    content: "A shimmering veil of aurora lights";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Stellar Mist")) {
+    box-shadow: 0 0 10px rgba(192, 192, 192, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Stellar Mist")):hover::after {
+    content: "A mystical mist of stellar essence";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Pulsar Halo")) {
+    box-shadow: 0 0 10px rgba(192, 192, 192, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Pulsar Halo")):hover::after {
+    content: "A radiant halo of cosmic energy";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Nebula Painting")) {
+    box-shadow: 0 0 10px rgba(200, 50, 200, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Nebula Painting")):hover::after {
+    content: "Painting with nebula colors";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Quantum Dance")) {
+    box-shadow: 0 0 10px rgba(200, 50, 200, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Quantum Dance")):hover::after {
+    content: "Dancing with quantum rhythms";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Starlight Poetry")) {
+    box-shadow: 0 0 10px rgba(200, 50, 200, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Starlight Poetry")):hover::after {
+    content: "Writing poetry under starlight";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Nebula Voyager")) {
+    box-shadow: 0 0 10px rgba(255, 150, 50, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Nebula Voyager")):hover::after {
+    content: "A traveler of nebula realms";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Pulsar Poet")) {
+    box-shadow: 0 0 10px rgba(50, 255, 150, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Pulsar Poet")):hover::after {
+    content: "A poet inspired by pulsar rhythms";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.dataframe tr:has(td:contains("Quantum Pathfinder")) {
+    box-shadow: 0 0 10px rgba(150, 50, 255, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("Quantum Pathfinder")):hover::after {
+    content: "A seeker of quantum pathways";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+@keyframes pulse {
+    0% { box-shadow: 0 0 10px rgba(192, 192, 192, 0.7); }
+    50% { box-shadow: 0 0 20px rgba(192, 192, 192, 1.0); }
+    100% { box-shadow: 0 0 10px rgba(192, 192, 192, 0.7); }
 }
 #status-message {
     text-align: center;
@@ -506,38 +1313,178 @@ button:hover {
     border-radius: 10px;
     padding: 10px;
 }
+.dropdown {
+    display: block !important;
+    margin-bottom: 20px;
+}
+.gallery {
+    border: 2px solid #00e6e6;
+    border-radius: 10px;
+    padding: 10px;
+    background: rgba(20, 20, 60, 0.9);
+}
+#nsfw-warning {
+    color: #ff5555;
+    text-align: center;
+    margin: 10px 0;
+}
 """
 
-# Create Gradio interface with real-time graph and progress bar
-with gr.Blocks(css=custom_css) as demo:
+# Create Gradio interface with new dropdowns
+with gr.Blocks(css=custom_css, theme="default") as demo:
     gr.Markdown("# Neural Identity Matrix")
     gr.Markdown("Generate futuristic clone identities with an evolving AI core.")
-
-    num_identities = gr.Slider(minimum=1, maximum=250, value=10, step=1, label="Number of Identities to Generate")
-    resume_training = gr.Checkbox(label="Resume Training from Checkpoint", value=False)
+    gr.Markdown("**Note**: Scroll horizontally to view all columns in the table if needed.")
 
     with gr.Row():
-        generate_button = gr.Button("Initialize Identity Generation")
-        clear_button = gr.Button("Clear Output")
+        profession_filter = gr.Dropdown(
+            choices=['All'] + list(le_dict['Profession'].classes_),
+            value='All',
+            label="Filter by Profession"
+        )
+        num_identities = gr.Slider(minimum=1, maximum=250, value=25, step=1, label="Number of Identities to Generate")
+        resume_training = gr.Checkbox(label="Resume Training from Checkpoint", value=False)
 
-    progress_bar = gr.Slider(minimum=0, maximum=100, value=0, label="Progress", interactive=False)
-    status_message = gr.Markdown("Ready to Generate")
-    loss_plot = gr.Plot(label="Training Loss")
-    output = gr.Dataframe(label="Identity Matrix Output")
-    download_button = gr.File(label="Download Identities as CSV", visible=False)
+    with gr.Tabs():
+        with gr.Tab(label="Identity Generator"):
+            with gr.Row():
+                generate_button = gr.Button("Initialize Identity Generation")
+                clear_button = gr.Button("Clear Output")
+                refresh_log_button = gr.Button("Refresh Log")
+                download_plot_button = gr.Button("Download Loss Plot")
+
+            progress_bar = gr.Slider(minimum=0, maximum=100, value=0, label="Progress", interactive=False)
+            status_message = gr.Markdown("Ready to Generate")
+            loss_plot = gr.Plot(label="Training Loss")
+            output = gr.Dataframe(
+                label="Identity Matrix Output",
+                headers=['Clone Number', 'Firstname', 'Lastname', 'Nickname', 'Age', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Height', 'Weight', 'Body type', 'Body Measurements', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs', 'Sister Of', 'Energy Signature', 'Cosmic Tattoo', 'Cosmic Playlist', 'Cosmic Pet', 'Cosmic Artifact', 'Cosmic Aura', 'Cosmic Hobby', 'Cosmic Destiny'],
+                wrap=False,
+                col_count=27
+            )
+            download_button = gr.File(label="Download Identities as CSV", visible=False)
+            download_plot_output = gr.File(label="Download Loss Plot", visible=False)
+
+            with gr.Row():
+                identity_dropdown = gr.Dropdown(
+                    choices=["None"],
+                    value="None",
+                    label="Select Identity for Image Generation"
+                )
+                allow_nsfw = gr.Checkbox(label="Allow NSFW Content (May Include Nudity)", value=False)
+            
+            with gr.Row():
+                style_theme_dropdown = gr.Dropdown(
+                    choices=style_themes_list,
+                    value=style_themes_list[0],  # Default to first item
+                    label="Style Theme"
+                )
+                location_dropdown = gr.Dropdown(
+                    choices=locations_list,
+                    value=locations_list[0],  # Default to first item
+                    label="Location"
+                )
+                overall_theme_dropdown = gr.Dropdown(
+                    choices=overall_themes_list,
+                    value=overall_themes_list[0],  # Default to first item
+                    label="Overall Theme"
+                )
+
+            with gr.Row():
+                generate_image_button = gr.Button("Generate Image with FLUX.1")
+                batch_generate_button = gr.Button("Generate Images for All Identities")
+            
+            nsfw_warning = gr.Markdown(
+                "⚠️ Warning: NSFW content may include nudity or suggestive elements.",
+                elem_id="nsfw-warning",
+                visible=False
+            )
+            
+            image_output = gr.Image(label="Generated Image")
+            image_status = gr.Markdown("No image generated yet.")
+            print("DEBUG: Initializing gallery_output component")
+            gallery_output = gr.Gallery(label="Gallery of Generated Clones", columns=3, height="auto")
+            
+            with gr.Row():
+                caption_input = gr.Textbox(label="Caption for X Post", placeholder="Enter your caption here (leave blank for a suggestion)...")
+                share_x_button = gr.Button("Share to X")
+            share_status = gr.Markdown("Ready to share to X.")
+        
+        with gr.Tab(label="Training Log"):
+            log_output = gr.Textbox(label="Training Log", lines=20, interactive=False)
+
+    def update_log():
+        try:
+            with open('training_log.txt', 'r') as f:
+                return f.read()
+        except FileNotFoundError:
+            return "No training log available yet."
+
+    def download_loss_plot():
+        return "loss_plot.png"
+
+    def toggle_nsfw_warning(allow_nsfw):
+        return gr.update(visible=allow_nsfw)
 
     generate_button.click(
         fn=generate_identities_gui_wrapper,
-        inputs=[num_identities, resume_training],
-        outputs=[output, download_button, progress_bar, status_message, loss_plot],
+        inputs=[num_identities, resume_training, profession_filter],
+        outputs=[output, download_button, download_plot_output, identity_dropdown, image_output, progress_bar, status_message, loss_plot],
         queue=True
+    ).then(
+        fn=lambda df: display_image_gallery(df) if df is not None else ["No images generated yet."],
+        inputs=[output],
+        outputs=gallery_output
+    ).then(
+        fn=update_log,
+        inputs=None,
+        outputs=log_output
     )
 
-# Launch the Gradio app
-demo.launch(
-    server_name="127.0.0.1",
-    server_port=7860,
-    share=False,
-    debug=True,
-    height=800
-)
+    generate_image_button.click(
+        fn=generate_flux_image,
+        inputs=[identity_dropdown, output, allow_nsfw, style_theme_dropdown, location_dropdown, overall_theme_dropdown],
+        outputs=[image_output, image_status]
+    ).then(
+        fn=lambda df: display_image_gallery(df) if df is not None else ["No images generated yet."],
+        inputs=[output],
+        outputs=gallery_output
+    )
+
+    batch_generate_button.click(
+        fn=generate_images_batch,
+        inputs=[output, gr.State(value=10), allow_nsfw, style_theme_dropdown, location_dropdown, overall_theme_dropdown],
+        outputs=[image_output, image_status, gallery_output, progress_bar]
+    )
+
+    share_x_button.click(
+        fn=share_to_x,
+        inputs=[image_output, caption_input, output, identity_dropdown],
+        outputs=share_status
+    )
+
+    clear_button.click(
+        fn=lambda: (None, None, None, gr.update(choices=["None"], value="None"), None, 0, "Ready to Generate", None, "", None, "No image generated yet.", ["No images generated yet."], "", "Ready to share to X.", gr.update(visible=False)),
+        outputs=[output, download_button, download_plot_output, identity_dropdown, image_output, progress_bar, status_message, loss_plot, log_output, image_output, image_status, gallery_output, caption_input, share_status, nsfw_warning]
+    )
+
+    refresh_log_button.click(
+        fn=update_log,
+        inputs=None,
+        outputs=log_output
+    )
+
+    download_plot_button.click(
+        fn=download_loss_plot,
+        inputs=None,
+        outputs=download_plot_output
+    )
+
+    allow_nsfw.change(
+        fn=toggle_nsfw_warning,
+        inputs=allow_nsfw,
+        outputs=nsfw_warning
+    )
+
+demo.launch(share=False)
+# --- End of Neural Identity Matrix V24.33 ---
