@@ -31,6 +31,25 @@ The Neural Identity Matrix is a Python-based application that generates detailed
 5. Run the script: `python Neural_Identity_Matrix_original_Test_V24.32.py`
 6. Open the Gradio interface in your browser and start generating clones!
 
+## Flux Requirements:
+
+Models used in Neural_Identity_Matrix.py
+
+acornIsSpinningFLUX_devfp8V11.safetensors
+https://huggingface.co/datasets/John6666/flux1-backup-202408/blob/main/acornIsSpinningFLUX_devfp8V11.safetensors
+
+t5xxl_fp16.safetensors
+https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/t5xxl_fp16.safetensors
+
+godessProjectFLUX_clipLFP8.safetensors
+Source unknown you probably can use this one:
+https://huggingface.co/comfyanonymous/flux_text_encoders/blob/main/t5xxl_fp8_e4m3fn.safetensors
+
+clip_g.safetensors
+https://huggingface.co/second-state/stable-diffusion-3.5-large-GGUF/blob/main/clip_g.safetensors
+
+You can use other Flux Models by modifying Neural_Identity_Matrix.py.
+
 ## Contributing
 We’d love for you to join our cosmic journey! Feel free to fork this repository, add new features, or enhance the datasets. Submit a pull request, and let’s build the universe together. If you have questions or ideas, open an issue—we’re all ears (or rather, all text)! 💫
 
