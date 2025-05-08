@@ -5,6 +5,10 @@
 ## What is NIM?
 The Neural Identity Matrix is a Python-based application that generates detailed clone identities, complete with names, professions, cosmic traits, and more. Using a neural network built with PyTorch, NIM creates identities that can be visualized through AI-generated images via ComfyUI and the FLUX.1-DEV model. Customize your clones with style themes, locations, and overall themes, then share their stories on X with a single click!
 
+A shorter but for some better description:
+
+The Neural Identity Matrix is a Python-based application that creates unique profiles for futuristic clones, including details like names, ages, professions, and cosmic traits (e.g., "Nebula Kitten" pet, "Quantum Pathfinder" destiny). Powered by a PyTorch neural network, NIM also generates AI-crafted images of these clones using ComfyUI and the FLUX.1 model, so you can see and share their cosmic designs!
+
 ## Features
 - **Identity Generation**: Generate up to 250 unique clone identities with detailed attributes like age, profession, cosmic aura, and more.
 - **Customizable Aesthetics**: Choose from a variety of style themes (e.g., Cyberpunk, Galactic Royalty), locations (e.g., Cosmic Nebula, Quantum Citadel), and overall themes (e.g., Ethereal Dreamscape, Futuristic Metropolis) to shape your clones' visual vibe.
