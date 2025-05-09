@@ -27,7 +27,7 @@
 6. Set up your environment (see `requirements.txt` for details) and ensure ComfyUI is running locally at `http://127.0.0.1:8188`.
 7. Place the required `.csv` files (`dataset.csv`, `previous_names.csv`, `upper_clothing.csv`, `lower_clothing.csv`, `footwear.csv`, `style_themes.csv`, `locations.csv`, `overall_themes.csv`) in the project directory.
 8. Verify that you have the necessary ComfyUI Custom Nodes, and that you can generate images. open CLN-010_SparPro_00001_.png as the workflow in ComfyUI and try to generate an image.
-9. Run the script: `python Neural_Identity_Matrix_original_Test_V24.32.py`
+9. Run the script: `python Neural_Identity_Matrix.py` or `python app.py`
 10. Open the Gradio interface in your browser and start generating clones!
 
 ## Flux Requirements:
