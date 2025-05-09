@@ -35,10 +35,11 @@ The Neural Identity Matrix is a Python-based application that creates unique pro
 1. You need Python 3.10.6
 2. Clone this repository: `git clone https://github.com/CRCODE22/Neural-Identity-Matrix.git`
 3. Install dependencies: `pip install -r requirements.txt`
-4. Set up your environment (see `requirements.txt` for details) and ensure ComfyUI is running locally at `http://127.0.0.1:8188`.
-5. Place the required `.csv` files (`dataset.csv`, `previous_names.csv`, `upper_clothing.csv`, `lower_clothing.csv`, `footwear.csv`, `style_themes.csv`, `locations.csv`, `overall_themes.csv`) in the project directory.
-6. Run the script: `python Neural_Identity_Matrix_original_Test_V24.32.py`
-7. Open the Gradio interface in your browser and start generating clones!
+4. You need https://github.com/rgthree/rgthree-comfy in \ComfyUI\custom_nodes
+5. Set up your environment (see `requirements.txt` for details) and ensure ComfyUI is running locally at `http://127.0.0.1:8188`.
+6. Place the required `.csv` files (`dataset.csv`, `previous_names.csv`, `upper_clothing.csv`, `lower_clothing.csv`, `footwear.csv`, `style_themes.csv`, `locations.csv`, `overall_themes.csv`) in the project directory.
+7. Run the script: `python Neural_Identity_Matrix_original_Test_V24.32.py`
+8. Open the Gradio interface in your browser and start generating clones!
 
 ## Flux Requirements:
 
