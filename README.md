@@ -13,11 +13,11 @@
 ## Getting Started
 
 ### Prerequisites
-- **Python**: 3.9 or higher
+- **Python**: 3.10.6 or higher
 - **Conda**: For environment management
 - **ComfyUI**: Running locally at `http://127.0.0.1:8188` for image generation
 - **X API Credentials**: For sharing to X (optional)
-- **Hardware**: GPU recommended for image generation
+- **Hardware**: GPU recommended for image generation with Flux-Dev.
 
 ## Getting Started
 1. You need Python 3.10.6
