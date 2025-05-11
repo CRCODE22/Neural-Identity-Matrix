@@ -1,7 +1,7 @@
-# --- Start of generate_dataset.py (Updated for Neural Identity Matrix V24.22) ---
+# --- Start of generate_dataset.py (Updated for Neural Identity Matrix V24.34) ---
 # Run `python -m py_compile generate_dataset.py` to check syntax before execution
-# This script generates a synthetic dataset (dataset.csv) for Neural_Identity_Matrix_V24.22.py
-# Saves dataset.csv in the current directory (e.g., K:\My Github Repositories\Neural-Identity-Matrix\)
+# This script generates a synthetic dataset (dataset.csv) for Neural_Identity_Matrix_V24.34.py
+# Saves dataset.csv in the current directory
 # Requires: pandas, numpy
 
 import pandas as pd
@@ -15,6 +15,7 @@ random.seed(42)
 
 # Define parameters
 num_samples = 100
+output_path = 'dataset.csv'
 
 # Updated professions list to match V24.21
 professions = [
@@ -24,8 +25,9 @@ professions = [
     'Makeup Artist', 'Photographer', 'Poet', 'Producer', 'Programmer', 'Singer',
     'Social Media Star', 'Tattoo Artist', 'Youtuber',
     'Astrologer', 'Chef', 'DJ', 'Engineer', 'Gamer', 'Hacker', 'Pilot',
-    'Scientist', 'Streamer', 'Writer', 'Camgirl', 'Actress', 'Cop', 'High Priestess' 'Witch'
+    'Scientist', 'Streamer', 'Writer', 'Camgirl', 'Actress', 'Cop', 'High Priestess', 'Witch'
 ]
+professions = professions + ['Poet'] * 3  # Increase weight for Poet
 weights = [1/len(professions)] * len(professions)
 
 # Expanded name lists for diversity, added names with "X"
@@ -64,6 +66,34 @@ nickname_suffixes = [
     'ModelX', 'Starlet', 'Glam',
     'Clone', 'NIM', 'Core'
 ]
+
+# New: Quantum Poet styles (same as app.py)
+poetic_styles = [
+    'Weaver of Pulsar Sonnets',
+    'Chanter of Nebula Dreams',
+    'Scribe of Starlight Haikus',
+    'Bard of Quantum Elegies',
+    'Poet of Cosmic Serenades',
+    'Verse-Spinner of Aurora Hymns',
+    'Lyricist of Galactic Odes',
+    'Rhapsodist of Stellar Canticles'
+]
+
+def generate_quantum_poem(quantum_poet):
+    """Generate a short cosmic poem for clones with a Quantum Poet trait."""
+    if quantum_poet == 'None':
+        return 'No poem crafted.'
+    templates = {
+        'Weaver of Pulsar Sonnets': 'In pulsar’s glow, my words take flight,\nSpinning sonnets through cosmic night.',
+        'Chanter of Nebula Dreams': 'Nebula dreams in colors vast,\nI chant their hues from future’s past.',
+        'Scribe of Starlight Haikus': 'Starlight whispers soft and clear,\nHaikus dance where comets steer.',
+        'Bard of Quantum Elegies': 'Quantum threads, my elegies weave,\nMourning stars that dare believe.',
+        'Poet of Cosmic Serenades': 'With cosmic strings, I serenade the stars,\nMy verses echo where galaxies are.',
+        'Verse-Spinner of Aurora Hymns': 'Auroras sing, my verses spin,\nHymns that glow where skies begin.',
+        'Lyricist of Galactic Odes': 'Galaxies spin, my odes unfold,\nLyrics of stardust, bright and bold.',
+        'Rhapsodist of Stellar Canticles': 'Stellar canticles, my voice does soar,\nRhapsodies for worlds and more.'
+    }
+    return templates.get(quantum_poet, 'A cosmic verse awaits creation.')
 
 # Generate synthetic data
 data = {
@@ -118,8 +148,15 @@ data = {
     ).tolist(),
     'Bra/cup size': np.random.choice(['A', 'B', 'C', 'D', 'DD'], num_samples).tolist(),
     'Boobs': np.random.choice(['Natural', 'Enhanced'], num_samples).tolist(),
+    'Quantum Poet': [
+        random.choice(poetic_styles) if random.random() < 0.03 else 'None'
+        for _ in range(num_samples)
+    ],
+    'Cosmic Poem': [
+        generate_quantum_poem(random.choice(poetic_styles) if random.random() < 0.03 else 'None')
+        for _ in range(num_samples)
+    ]
 }
-
 # Create DataFrame
 df = pd.DataFrame(data)
 
@@ -136,9 +173,11 @@ for col in df.columns:
     else:
         print(f"{col}: Type={df[col].dtype}, Unique Values={len(df[col].unique())}")
 print(f"Sample Nicknames (first 5): {df['Nickname'].head().tolist()}")
+print(f"Sample Quantum Poets (non-None): {df[df['Quantum Poet'] != 'None']['Quantum Poet'].tolist()}")
+print(f"Sample Cosmic Poems (non-None): {df[df['Cosmic Poem'] != 'No poem crafted.']['Cosmic Poem'].tolist()}")
 
 # Save to CSV
 df.to_csv('dataset.csv', index=False)
-print(f"Generated dataset.csv with {len(df)} rows")
+print(f"Generated dataset.csv with {len(df)} rows and {len(df.columns)} columns")
 
 # --- End of generate_dataset.py ---
