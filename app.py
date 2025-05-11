@@ -7,19 +7,19 @@
 # ComfyUI must be running locally at http://127.0.0.1:8188 for image generation
 # X API credentials required for sharing feature; set up in environment variables
 
-import pandas as pd
-import numpy as np
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
+os.environ["HF_HUB_OFFLINE"] = "1"
+import pandas as pd
+import numpy as np
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from datetime import datetime, timedelta
 import gradio as gr
 import matplotlib.pyplot as plt
 import random
-import os
 import glob
-os.environ["HF_HUB_OFFLINE"] = "1"
 import pickle
 import time
 import sys
@@ -30,6 +30,39 @@ import io
 import secrets
 import tweepy
 
+# Ensure models directory exists
+MODELS_DIR = "models"
+os.makedirs(MODELS_DIR, exist_ok=True)
+
+def move_existing_images():
+    os.makedirs("generated_images", exist_ok=True)
+    for file in glob.glob("*.png"):
+        if os.path.isfile(file):
+            new_path = os.path.join("generated_images", file)
+            if not os.path.exists(new_path):
+                os.rename(file, new_path)
+                print(f"Moved {file} to {new_path}")
+move_existing_images()
+
+def save_name_generator(model, model_name):
+    """Save a trained name generator model to disk."""
+    model_name = model_name.replace('.pth', '')  # Remove .pth if present
+    model_path = os.path.join(MODELS_DIR, f"{model_name}.pth")
+    torch.save(model.state_dict(), model_path)
+    print(f"Saved {model_name} to {model_path}")
+
+def load_name_generator(model, model_name):
+    """Load a trained name generator model from disk if it exists."""
+    model_name = model_name.replace('.pth', '')  # Remove .pth if present
+    model_path = os.path.join(MODELS_DIR, f"{model_name}.pth")
+    if os.path.exists(model_path):
+        model.load_state_dict(torch.load(model_path, weights_only=True))
+        model.eval()
+        print(f"LIER: Loaded {model_name} from {model_path}")
+        return True
+    return False
+# Configuration
+COMFYUI_URL = "http://127.0.0.1:8188"  # ComfyUI server address
 # Set random seed for reproducibility
 np.random.seed(42)
 torch.manual_seed(42)
@@ -39,7 +72,12 @@ random.seed(42)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Startup message
-print(f"Starting Neural Identity Matrix V24.33 | Device: {device} | Python: {sys.version.split()[0]} | PyTorch: {torch.__version__} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print("""
+🌌 Neural Identity Matrix V24.34 🌌
+Crafting Cosmic Clones with Quantum Poetry
+Device: {} | Python: {} | PyTorch: {} | Time: {}
+""".format(device, sys.version.split()[0], torch.__version__, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+#print(f"Starting Neural Identity Matrix V24.33 | Device: {device} | Python: {sys.version.split()[0]} | PyTorch: {torch.__version__} | Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 # Predefined lists (unchanged)
 predefined_first_names = [
@@ -111,6 +149,18 @@ class IdentityGenerator(nn.Module):
 
 # Name Generator
 class NameGenerator(nn.Module):
+    # Save and load NameGenerator models
+    def save_name_generator(model, path):
+        torch.save(model.state_dict(), path)
+        print(f"Saved model to {path}")
+
+    def load_name_generator(model, path):
+        if os.path.exists(path):
+            model.load_state_dict(torch.load(path))
+            model.eval()
+            print(f"Loaded model from {path}")
+            return True
+        return False
     def __init__(self, vocab_size, hidden_size, embedding_dim, num_layers=1):
         super(NameGenerator, self).__init__()
         self.num_layers = num_layers
@@ -133,12 +183,14 @@ class NameGenerator(nn.Module):
 try:
     print("Loading dataset from dataset.csv")
     df = pd.read_csv('dataset.csv')
+    df_names = pd.read_csv('previous_names.csv')
     print(f"Loaded dataset.csv with {len(df)} rows")
 except FileNotFoundError:
     print("Error: dataset.csv not found!")
     raise
 try:
     additional_names = pd.read_csv('previous_names.csv')
+    print(f"Rows in previous_names.csv: {len(df_names)}")
     print(f"Loaded {len(additional_names)} additional first names and last names from previous_names.csv")
 except FileNotFoundError:
     print("Warning: previous_names.csv not found. Creating empty DataFrame.")
@@ -206,9 +258,16 @@ def train_name_generator(model, names, char_to_idx, max_len, epochs=100):
         if (epoch + 1) % 20 == 0:
             print(f'Epoch {(epoch + 1)}/{epochs}, Loss: {total_loss / len(names):.4f}')
 
-train_name_generator(first_name_gen, first_names, first_name_char_to_idx, first_name_max_len)
-train_name_generator(last_name_gen, last_names, last_name_char_to_idx, last_name_max_len)
-train_name_generator(nickname_gen, nicknames, nickname_char_to_idx, nickname_max_len)
+# Load or train name generators
+if not load_name_generator(first_name_gen, 'first_name_gen'):
+    train_name_generator(first_name_gen, first_names, first_name_char_to_idx, first_name_max_len)
+    save_name_generator(first_name_gen, 'first_name_gen')
+if not load_name_generator(last_name_gen, 'last_name_gen'):
+    train_name_generator(last_name_gen, last_names, last_name_char_to_idx, last_name_max_len)
+    save_name_generator(last_name_gen, 'last_name_gen')
+if not load_name_generator(nickname_gen, 'nickname_gen'):
+    train_name_generator(nickname_gen, nicknames, nickname_char_to_idx, nickname_max_len)
+    save_name_generator(nickname_gen, 'nickname_gen')
 
 # Nickname suffixes
 nickname_suffixes = [
@@ -217,6 +276,27 @@ nickname_suffixes = [
 ]
 print(f"Nickname settings: min_length=3, max_length={nickname_max_len}, suffixes={nickname_suffixes}")
 
+poetic_styles = [
+    'Weaver of Pulsar Sonnets', 'Chanter of Nebula Dreams', 'Scribe of Starlight Haikus',
+    'Bard of Quantum Elegies', 'Poet of Cosmic Serenades', 'Verse-Spinner of Aurora Hymns',
+    'Lyricist of Galactic Odes', 'Rhapsodist of Stellar Canticles'
+]
+# Generate_quantum_poem
+def generate_quantum_poem(quantum_poet):
+    """Generate a short cosmic poem for clones with a Quantum Poet trait."""
+    if quantum_poet == 'None':
+        return 'No poem crafted.'
+    templates = {
+        'Weaver of Pulsar Sonnets': 'In pulsar’s glow, my words take flight,\nSpinning sonnets through cosmic night.',
+        'Chanter of Nebula Dreams': 'Nebula dreams in colors vast,\nI chant their hues from future’s past.',
+        'Scribe of Starlight Haikus': 'Starlight whispers soft and clear,\nHaikus dance where comets steer.',
+        'Bard of Quantum Elegies': 'Quantum threads, my elegies weave,\nMourning stars that dare believe.',
+        'Poet of Cosmic Serenades': 'With cosmic strings, I serenade the stars,\nMy verses echo where galaxies are.',
+        'Verse-Spinner of Aurora Hymns': 'Auroras sing, my verses spin,\nHymns that glow where skies begin.',
+        'Lyricist of Galactic Odes': 'Galaxies spin, my odes unfold,\nLyrics of stardust, bright and bold.',
+        'Rhapsodist of Stellar Canticles': 'Stellar canticles, my voice does soar,\nRhapsodies for worlds and more.'
+    }
+    return templates.get(quantum_poet, 'A cosmic verse awaits creation.')
 # Generate names
 def generate_name(generator, char_to_idx, idx_to_char, max_len, device, name_type='firstname', existing_names=None, temperature=0.7):
     generator.eval()
@@ -319,7 +399,7 @@ model = IdentityGenerator(input_size, hidden_size, output_size, num_layers).to(d
 def train_model(model, features, cycles=5, epochs_per_cycle=20, verbose=False):
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
-    scaler = torch.amp.GradScaler('cuda')
+    scaler = torch.amp.GradScaler('cuda') if torch.cuda.is_available() else None
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=epochs_per_cycle // 2, gamma=0.5)
     losses = []
     all_losses = []
@@ -341,18 +421,26 @@ def train_model(model, features, cycles=5, epochs_per_cycle=20, verbose=False):
                     inputs = torch.tensor(features[i:i+1], dtype=torch.float32).to(device)
                     targets = inputs.clone()
                     
+
                     hidden, cell = model.init_hidden(1)
                     optimizer.zero_grad()
                     
-                    with torch.amp.autocast('cuda'):
+                    if torch.cuda.is_available() and scaler is not None:
+                        with torch.amp.autocast('cuda'):
+                            outputs, hidden, cell = model(inputs, hidden, cell)
+                            outputs = outputs.squeeze(1)
+                            loss = criterion(outputs, targets)
+                        scaler.scale(loss).backward()
+                        scaler.step(optimizer)
+                        scaler.update()
+                    else:
                         outputs, hidden, cell = model(inputs, hidden, cell)
                         outputs = outputs.squeeze(1)
                         loss = criterion(outputs, targets)
-                    scaler.scale(loss).backward()
-                    scaler.step(optimizer)
-                    scaler.update()
+                        loss.backward()
+                        optimizer.step()
                     total_loss += loss.item()
-                
+
                 scheduler.step()
                 total_epochs += 1
                 avg_loss = total_loss / len(features)
@@ -397,15 +485,17 @@ def train_model(model, features, cycles=5, epochs_per_cycle=20, verbose=False):
 
 # Generate unique filename
 def generate_unique_filename(base_name):
+    """Generate a unique filename in the generated_images folder."""
+    os.makedirs("generated_images", exist_ok=True)  # Create folder if it doesn't exist
     while True:
-        random_suffix = secrets.token_hex(5).upper()[:11]  # 11-character hex string
-        filename = f"{base_name}_{random_suffix}.png"
-        if not os.path.exists(filename):
-            return filename
-        print(f"Filename {filename} already exists, generating a new suffix...")
-
+         random_suffix = secrets.token_hex(5).upper()[:11]  # 11-character hex string
+         filename = f"{base_name}_{random_suffix}.png"
+         output_path = os.path.join("generated_images", filename)
+         if not os.path.exists(output_path):
+             return output_path
+         print(f"Filename {output_path} already exists, generating a new suffix...")
 # Generate image with PG/NSFW option, style theme, location, and overall theme
-def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, style_theme="Cyberpunk", location="Cosmic Nebula", overall_theme="Ethereal Dreamscape"):
+def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, style_theme="Cyberpunk", location="Cosmic Nebula", overall_theme="Ethereal Dreamscape", seed=0):
     if selected_identity == "None" or df_identities is None or df_identities.empty:
         return None, "Please generate identities and select one for image generation."
     
@@ -481,7 +571,7 @@ def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, styl
                 "class_type": "BasicGuider"
             },
             "25": {
-                "inputs": {"noise_seed": int(time.time()), "noise_mode": "randomize"},
+                "inputs": {"noise_seed": seed if seed > 0 else int(time.time()), "noise_mode": "randomize"},
                 "class_type": "RandomNoise"
             },
             "26": {
@@ -538,7 +628,7 @@ def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, styl
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         
-        comfyui_url = "http://127.0.0.1:8188"
+        comfyui_url = COMFYUI_URL
         response = requests.post(
             f"{comfyui_url}/prompt",
             json={"prompt": workflow},
@@ -593,7 +683,7 @@ def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, styl
             torch.cuda.empty_cache()
 
 # Batch image generation with new options
-def generate_images_batch(df_identities, batch_size=10, allow_nsfw=False, style_theme="Cyberpunk", location="Cosmic Nebula", overall_theme="Ethereal Dreamscape"):
+def generate_images_batch(df_identities, batch_size=10, allow_nsfw=False, style_theme="Cyberpunk", location="Cosmic Nebula", overall_theme="Ethereal Dreamscape", seed=0):
     if df_identities is None or df_identities.empty:
         yield None, "No identities available for image generation.", ["No images generated yet."]
         return
@@ -609,7 +699,7 @@ def generate_images_batch(df_identities, batch_size=10, allow_nsfw=False, style_
         for idx, row in batch.iterrows():
             selected_identity = f"{row['Clone Number']}: {row['Nickname']}"
             print(f"Generating image for {selected_identity} in batch")
-            image_path, status = generate_flux_image(selected_identity, df_identities, allow_nsfw, style_theme, location, overall_theme)
+            image_path, status = generate_flux_image(selected_identity, df_identities, allow_nsfw, style_theme, location, overall_theme, seed)
             if image_path:
                 print(f"Batch image generated: {image_path}")
             else:
@@ -632,7 +722,7 @@ def display_image_gallery(df_identities):
     image_paths = []
     for _, row in df_identities.iterrows():
         nickname = row['Nickname'].replace(' ', '').lower()
-        pattern = f"{nickname}_*.png"
+        pattern = os.path.join("generated_images", f"{nickname}_*.png")
         matching_files = glob.glob(pattern)
         for image_path in matching_files:
             if os.path.exists(image_path):
@@ -646,19 +736,26 @@ def display_image_gallery(df_identities):
     print(f"DEBUG: Returning {len(image_paths)} images for gallery")
     return image_paths
 
+import random  # Ensure random is imported at the top of the file
+
 # Enhanced suggest_caption function
 def suggest_caption(row):
     traits = [
         f"{row['Nickname']}, a {row['Profession'].lower()}",
         f"with {row['Hair color'].lower()} hair",
         f"glowing with {row['Cosmic Aura'].lower() if row['Cosmic Aura'] != 'None' else 'electric starlight'}",
-        f"destined as a {row['Cosmic Destiny'].lower() if row['Cosmic Destiny'] != 'None' else 'stellar traveler'}"
+        f"destined as a {row['Cosmic Destiny'].lower() if row['Cosmic Destiny'] != 'None' else 'stellar traveler'}",
+        f"crafting as a {row['Quantum Poet'].lower() if row['Quantum Poet'] != 'None' else 'cosmic verse-weaver'}"
     ]
+    if row['Cosmic Poem'] != 'No poem crafted.':
+        # Pre-process the poem to replace newlines
+        poem_text = row['Cosmic Poem'].replace('\n', ' ')
+        traits.append(f"penning: {poem_text}")
     if row['Cosmic Pet'] != 'None':
         traits.append(f"with her {row['Cosmic Pet'].lower()}")
     if row['Cosmic Hobby'] != 'None':
         traits.append(f"enjoying {row['Cosmic Hobby'].lower()}")
-    return f"{random.choice(traits)} shines in V24.33! 🌌 #CosmicDreams #AIArt"
+    return f"{random.choice(traits)} shines in V24.34! 🌌 #CosmicDreams #AIArt"
 
 # Share image to X with suggested caption (Updated to fix ValueError)
 def share_to_x(image_path, caption, df_identities, selected_identity):
@@ -846,6 +943,11 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             if random.random() < 0.025:
                 cosmic_destiny = random.choice(['Nebula Voyager', 'Pulsar Poet', 'Quantum Pathfinder'])
                 print(f"CLN-{i+1:03d} has a Cosmic Destiny: {cosmic_destiny}")
+
+            # Initialize quantum_poet and cosmic_poem from dataset if available
+            sample_row = df.iloc[random.randint(0, len(df)-1)]
+            quantum_poet = sample_row['Quantum Poet'] if 'Quantum Poet' in df.columns else 'None'
+            cosmic_poem = sample_row['Cosmic Poem'] if 'Cosmic Poem' in df.columns else generate_quantum_poem(quantum_poet)
             
             identity = {
                 'Clone Number': f'CLN-{i+1:03d}',
@@ -874,8 +976,17 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
                 'Cosmic Artifact': cosmic_artifact,
                 'Cosmic Aura': cosmic_aura,
                 'Cosmic Hobby': cosmic_hobby,
-                'Cosmic Destiny': cosmic_destiny
+                'Cosmic Destiny': cosmic_destiny,
+                'Quantum Poet': quantum_poet,
+                'Cosmic Poem': cosmic_poem,
             }
+            # Add Quantum Poet trait if None and 3% chance
+            if quantum_poet == 'None' and random.random() < 0.03:
+                quantum_poet = random.choice(poetic_styles)
+                cosmic_poem = generate_quantum_poem(quantum_poet)
+                print(f"CLN-{i+1:03d} is a Quantum Poet: {quantum_poet}")
+            identity['Quantum Poet'] = quantum_poet
+            identity['Cosmic Poem'] = cosmic_poem
             identities.append(identity)
             
             df_identities = pd.DataFrame(identities)
@@ -1310,6 +1421,27 @@ button:hover {
     transform: translateX(-50%);
     white-space: nowrap;
 }
+.dataframe tr:has(td:contains("No poem crafted.")) {
+    background: rgba(20, 20, 60, 0.9) !important;
+}
+.dataframe tr:has(td:contains("pulsar")) {
+    box-shadow: 0 0 10px rgba(255, 50, 150, 0.7) !important;
+    animation: pulse 1.5s infinite;
+}
+.dataframe tr:has(td:contains("pulsar")):hover::after {
+    content: "A verse pulsing with cosmic energy";
+    position: absolute;
+    background: #0a0a28;
+    color: #00ffcc;
+    padding: 5px;
+    border: 1px solid #00e6e6;
+    border-radius: 5px;
+    z-index: 100;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
 @keyframes pulse {
     0% { box-shadow: 0 0 10px rgba(192, 192, 192, 0.7); }
     50% { box-shadow: 0 0 20px rgba(192, 192, 192, 1.0); }
@@ -1376,9 +1508,9 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
             loss_plot = gr.Plot(label="Training Loss")
             output = gr.Dataframe(
                 label="Identity Matrix Output",
-                headers=['Clone Number', 'Firstname', 'Lastname', 'Nickname', 'Age', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Height', 'Weight', 'Body type', 'Body Measurements', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs', 'Sister Of', 'Energy Signature', 'Cosmic Tattoo', 'Cosmic Playlist', 'Cosmic Pet', 'Cosmic Artifact', 'Cosmic Aura', 'Cosmic Hobby', 'Cosmic Destiny'],
+                headers=['Clone Number', 'Firstname', 'Lastname', 'Nickname', 'Age', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Height', 'Weight', 'Body type', 'Body Measurements', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs', 'Sister Of', 'Energy Signature', 'Cosmic Tattoo', 'Cosmic Playlist', 'Cosmic Pet', 'Cosmic Artifact', 'Cosmic Aura', 'Cosmic Hobby', 'Cosmic Destiny', 'Quantum Poet', 'Cosmic Poem'],
                 wrap=False,
-                col_count=27
+                col_count=29
             )
             download_button = gr.File(label="Download Identities as CSV", visible=False)
             download_plot_output = gr.File(label="Download Loss Plot", visible=False)
@@ -1407,7 +1539,7 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
                     value=overall_themes_list[0],  # Default to first item
                     label="Overall Theme"
                 )
-
+            seed_input = gr.Number(label="Image Seed (0 for Random)", value=0, minimum=0, step=1, precision=0)
             with gr.Row():
                 generate_image_button = gr.Button("Generate Image with FLUX.1")
                 batch_generate_button = gr.Button("Generate Images for All Identities")
@@ -1461,7 +1593,7 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
 
     generate_image_button.click(
         fn=generate_flux_image,
-        inputs=[identity_dropdown, output, allow_nsfw, style_theme_dropdown, location_dropdown, overall_theme_dropdown],
+        inputs=[identity_dropdown, output, allow_nsfw, style_theme_dropdown, location_dropdown, overall_theme_dropdown, seed_input],
         outputs=[image_output, image_status]
     ).then(
         fn=lambda df: display_image_gallery(df) if df is not None else ["No images generated yet."],
@@ -1471,7 +1603,7 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
 
     batch_generate_button.click(
         fn=generate_images_batch,
-        inputs=[output, gr.State(value=10), allow_nsfw, style_theme_dropdown, location_dropdown, overall_theme_dropdown],
+        inputs=[output, gr.State(value=10), allow_nsfw, style_theme_dropdown, location_dropdown, overall_theme_dropdown, seed_input],
         outputs=[image_output, image_status, gallery_output, progress_bar]
     )
 
