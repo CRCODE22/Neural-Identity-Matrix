@@ -1,4 +1,4 @@
-# --- Start of Neural Identity Matrix V24.34 ---
+# --- Start of Neural Identity Matrix V24.35 ---
 # Run `python -m py_compile Neural_Identity_Matrix_original_Test_V24.34.py` to check syntax before execution
 # Ensure dataset.csv, previous_names.csv, upper_clothing.csv, lower_clothing.csv, footwear.csv, style_themes.csv, locations.csv, overall_themes.csv are in the project directory
 # Setup: conda activate neural-identity-matrix; pip install -r requirements.txt
@@ -29,6 +29,7 @@ from PIL import Image
 import io
 import secrets
 import tweepy
+import traceback
 
 # Ensure models directory exists
 MODELS_DIR = "models"
@@ -44,23 +45,6 @@ def move_existing_images():
                 print(f"Moved {file} to {new_path}")
 move_existing_images()
 
-def save_name_generator(model, model_name):
-    """Save a trained name generator model to disk."""
-    model_name = model_name.replace('.pth', '')  # Remove .pth if present
-    model_path = os.path.join(MODELS_DIR, f"{model_name}.pth")
-    torch.save(model.state_dict(), model_path)
-    print(f"Saved {model_name} to {model_path}")
-
-def load_name_generator(model, model_name):
-    """Load a trained name generator model from disk if it exists."""
-    model_name = model_name.replace('.pth', '')  # Remove .pth if present
-    model_path = os.path.join(MODELS_DIR, f"{model_name}.pth")
-    if os.path.exists(model_path):
-        model.load_state_dict(torch.load(model_path, weights_only=True))
-        model.eval()
-        print(f"LIER: Loaded {model_name} from {model_path}")
-        return True
-    return False
 # Configuration
 COMFYUI_URL = "http://127.0.0.1:8188"  # ComfyUI server address
 # Set random seed for reproducibility
@@ -226,48 +210,74 @@ first_name_max_len = max(len(str(name)) for name in first_names if pd.notna(name
 last_name_max_len = max(len(str(name)) for name in last_names if pd.notna(name)) + 1
 nickname_max_len = 20
 
-# Initialize name generators
-first_name_gen = NameGenerator(len(first_name_char_to_idx), hidden_size, embedding_dim, num_layers).to(device)
-last_name_gen = NameGenerator(len(last_name_char_to_idx), hidden_size, embedding_dim, num_layers).to(device)
-nickname_gen = NameGenerator(len(nickname_char_to_idx), hidden_size, embedding_dim, num_layers).to(device)
-
-# Training name generators
-def train_name_generator(model, names, char_to_idx, max_len, epochs=100):
-    criterion = nn.CrossEntropyLoss()
+def train_name_generator(model, names, char_to_idx, max_len, device, epochs=100):
+    criterion = nn.CrossEntropyLoss(ignore_index=-1)  # Ignore padding index
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     model.train()
     
     for epoch in range(epochs):
         total_loss = 0
+        random.shuffle(names)
+        hidden, cell = model.init_hidden(batch_size=1)
+        
         for name in names:
-            if pd.isna(name):
-                continue
-            name = str(name) + '\n'
-            inputs = torch.tensor([char_to_idx[char] for char in name[:-1]], dtype=torch.long).unsqueeze(0).to(device)
-            targets = torch.tensor([char_to_idx[char] for char in name[1:]], dtype=torch.long).unsqueeze(0).to(device)
+            # Prepare input and target sequences
+            input_seq = [char_to_idx.get(char, 0) for char in name[:max_len]]
+            target_seq = input_seq[1:] + [0]  # Shift right, pad with 0
+            if len(input_seq) < max_len:
+                input_seq += [0] * (max_len - len(input_seq))  # Pad with 0
+                target_seq += [0] * (max_len - len(target_seq))
             
-            hidden, cell = model.init_hidden(1)
+            input_tensor = torch.tensor([input_seq], dtype=torch.long, device=device)
+            target_tensor = torch.tensor(target_seq, dtype=torch.long, device=device)
+            
             optimizer.zero_grad()
-            
-            outputs, hidden, cell = model(inputs, hidden, cell)
-            loss = criterion(outputs.squeeze(), targets.squeeze())
+            output, hidden, cell = model(input_tensor, hidden.detach(), cell.detach())
+            loss = criterion(output.squeeze(0), target_tensor)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
         
-        if (epoch + 1) % 20 == 0:
-            print(f'Epoch {(epoch + 1)}/{epochs}, Loss: {total_loss / len(names):.4f}')
+        if (epoch + 1) % 10 == 0:
+            print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(names):.4f}")
+    
+    print(f"Finished training {model.__class__.__name__}")
+
+# Initialize name generators
+first_name_gen = NameGenerator(
+    vocab_size=len(first_name_char_to_idx),
+    hidden_size=256,
+    embedding_dim=64,
+    num_layers=1
+).to(device)
+last_name_gen = NameGenerator(
+    vocab_size=len(last_name_char_to_idx),
+    hidden_size=256,
+    embedding_dim=64,
+    num_layers=1
+).to(device)
+nickname_gen = NameGenerator(
+    vocab_size=len(nickname_char_to_idx),
+    hidden_size=256,
+    embedding_dim=64,
+    num_layers=1
+).to(device)
 
 # Load or train name generators
-if not load_name_generator(first_name_gen, 'first_name_gen'):
-    train_name_generator(first_name_gen, first_names, first_name_char_to_idx, first_name_max_len)
-    save_name_generator(first_name_gen, 'first_name_gen')
-if not load_name_generator(last_name_gen, 'last_name_gen'):
-    train_name_generator(last_name_gen, last_names, last_name_char_to_idx, last_name_max_len)
-    save_name_generator(last_name_gen, 'last_name_gen')
-if not load_name_generator(nickname_gen, 'nickname_gen'):
-    train_name_generator(nickname_gen, nicknames, nickname_char_to_idx, nickname_max_len)
-    save_name_generator(nickname_gen, 'nickname_gen')
+if not NameGenerator.load_name_generator(first_name_gen, 'first_name_gen.pth'):
+    print("Training first_name_gen...")
+    train_name_generator(first_name_gen, first_names, first_name_char_to_idx, first_name_max_len, device)
+    NameGenerator.save_name_generator(first_name_gen, 'first_name_gen.pth')
+
+if not NameGenerator.load_name_generator(last_name_gen, 'last_name_gen.pth'):
+    print("Training last_name_gen...")
+    train_name_generator(last_name_gen, last_names, last_name_char_to_idx, last_name_max_len, device)
+    NameGenerator.save_name_generator(last_name_gen, 'last_name_gen.pth')
+
+if not NameGenerator.load_name_generator(nickname_gen, 'nickname_gen.pth'):
+    print("Training nickname_gen...")
+    train_name_generator(nickname_gen, nicknames, nickname_char_to_idx, nickname_max_len, device)
+    NameGenerator.save_name_generator(nickname_gen, 'nickname_gen.pth')
 
 # Nickname suffixes
 nickname_suffixes = [
@@ -496,6 +506,7 @@ def generate_unique_filename(base_name):
          print(f"Filename {output_path} already exists, generating a new suffix...")
 # Generate image with PG/NSFW option, style theme, location, and overall theme
 def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, style_theme="Cyberpunk", location="Cosmic Nebula", overall_theme="Ethereal Dreamscape", seed=0):
+    print(f"DEBUG: Starting generate_flux_image for {selected_identity}, NSFW: {allow_nsfw}, Style: {style_theme}, Location: {location}, Theme: {overall_theme}, Seed: {seed}")
     if selected_identity == "None" or df_identities is None or df_identities.empty:
         return None, "Please generate identities and select one for image generation."
     
@@ -657,6 +668,7 @@ def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, styl
                         if image_response.status_code == 200:
                             image = Image.open(io.BytesIO(image_response.content))
                             image.save(output_path)
+                            print(f"DEBUG: Image saved as {output_path}")
                             print(f"Image saved as {output_path}")
                             return output_path, f"Image generated successfully for {selected_identity}."
                 print("Error: No image found in workflow output")
@@ -683,42 +695,67 @@ def generate_flux_image(selected_identity, df_identities, allow_nsfw=False, styl
             torch.cuda.empty_cache()
 
 # Batch image generation with new options
-def generate_images_batch(df_identities, batch_size=10, allow_nsfw=False, style_theme="Cyberpunk", location="Cosmic Nebula", overall_theme="Ethereal Dreamscape", seed=0):
-    if df_identities is None or df_identities.empty:
-        yield None, "No identities available for image generation.", ["No images generated yet."]
-        return
-    
-    total_identities = len(df_identities)
-    print(f"Starting batch image generation for {total_identities} identities, batch size: {batch_size}, NSFW: {allow_nsfw}, Style Theme: {style_theme}, Location: {location}, Overall Theme: {overall_theme}")
-    
-    for start_idx in range(0, total_identities, batch_size):
-        end_idx = min(start_idx + batch_size, total_identities)
-        batch = df_identities.iloc[start_idx:end_idx]
-        print(f"Processing batch {start_idx + 1}-{end_idx} of {total_identities}")
-        
-        for idx, row in batch.iterrows():
-            selected_identity = f"{row['Clone Number']}: {row['Nickname']}"
-            print(f"Generating image for {selected_identity} in batch")
-            image_path, status = generate_flux_image(selected_identity, df_identities, allow_nsfw, style_theme, location, overall_theme, seed)
-            if image_path:
-                print(f"Batch image generated: {image_path}")
-            else:
-                print(f"Batch image failed for {selected_identity}: {status}")
-        
-        gallery_images = display_image_gallery(df_identities)
-        progress = (end_idx / total_identities) * 100
-        yield None, f"Generated images for {end_idx}/{total_identities} identities", gallery_images, progress
-        time.sleep(1)
+def generate_images_batch(df_identities, batch_size=5, allow_nsfw=False, style_theme="Cyberpunk", location="Cosmic Nebula", overall_theme="Ethereal Dreamscape", seed=0):
+ if df_identities is None or df_identities.empty:
+     yield None, "No identities available for image generation.", ["No images generated yet."]
+     return
+ 
+ total_identities = len(df_identities)
+ print(f"Starting batch image generation for {total_identities} identities, batch size: {batch_size}, NSFW: {allow_nsfw}, Style Theme: {style_theme}, Location: {location}, Overall Theme: {overall_theme}")
+ 
+ for start_idx in range(0, total_identities, batch_size):
+     end_idx = min(start_idx + batch_size, total_identities)
+     batch = df_identities.iloc[start_idx:end_idx]
+     print(f"Processing batch {start_idx + 1}-{end_idx} of {total_identities}")
+     
+     for idx, row in batch.iterrows():
+         selected_identity = f"{row['Clone Number']}: {row['Nickname']}"
+         print(f"Generating image for {selected_identity} in batch")
+         image_path, status = generate_flux_image(selected_identity, df_identities, allow_nsfw, style_theme, location, overall_theme, seed)
+         if image_path:
+             print(f"Batch image generated: {image_path}")
+             # Update Image column
+             df_identities.at[idx, 'Image'] = f'<img src="{image_path}" width="100">'
+             print(f"DEBUG: Updated Image column for {row['Nickname']}: {image_path}")
+         else:
+             print(f"Batch image failed for {selected_identity}: {status}")
+             df_identities.at[idx, 'Image'] = 'No image'
+             print(f"DEBUG: Set Image column to 'No image' for {row['Nickname']}")
 
-    yield None, "Batch image generation complete.", gallery_images, 100
+     # Save CSV with error handling
+     csv_path = 'generated_cha_identities.csv'
+     try:
+         with open(csv_path, 'a') as f:
+             pass  # Test write access
+         df_identities.to_csv(csv_path, index=False)
+         print(f"DEBUG: Saved {csv_path} with {len(df_identities)} identities")
+         print("DEBUG: Updated generated_cha_identities.csv with image paths")
+     except PermissionError:
+         error_msg = f"Error: Cannot write to {csv_path}: {str(e)}"
+         print(error_msg)
+         with open('error_log.txt', 'a') as f:
+            f.write(f"{datetime.now()}: {error_msg}\n")
+         raise
+     except Exception as e:
+        error_msg = f"Error saving {csv_path}: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        with open('error_log.txt', 'a') as f:
+            f.write(f"{datetime.now()}: {error_msg}\n")
+        raise
+     gallery_images = display_image_gallery(df_identities)
+     progress = (end_idx / total_identities) * 100
+     yield None, f"Generated images for {end_idx}/{total_identities} identities", gallery_images, progress
+     time.sleep(1)
+
+ yield None, "Batch image generation complete.", gallery_images, 100
 
 # Display image gallery
 def display_image_gallery(df_identities):
     print("DEBUG: Entering display_image_gallery")
+    print(f"DEBUG: df_identities type: {type(df_identities)}, shape: {df_identities.shape if df_identities is not None and not df_identities.empty else 'None or empty'}")
     if df_identities is None or df_identities.empty:
         print("DEBUG: DataFrame is None or empty, returning default message")
         return ["No images generated yet."]
-    
     image_paths = []
     for _, row in df_identities.iterrows():
         nickname = row['Nickname'].replace(' ', '').lower()
@@ -758,59 +795,158 @@ def suggest_caption(row):
     return f"{random.choice(traits)} shines in V24.34! 🌌 #CosmicDreams #AIArt"
 
 # Share image to X with suggested caption (Updated to fix ValueError)
-def share_to_x(image_path, caption, df_identities, selected_identity):
+def share_to_x(image_input, caption, df_identities, selected_identity):
     # Debug: Log the types and values
-    print(f"image_path type: {type(image_path)}, value: {image_path}")
+    print(f"image_input type: {type(image_input)}, value: {image_input}")
     print(f"selected_identity type: {type(selected_identity)}, value: {selected_identity}")
     print(f"df_identities type: {type(df_identities)}, columns: {list(df_identities.columns) if df_identities is not None else 'None'}")
 
-    # Ensure image_path is a string
-    if isinstance(image_path, (list, np.ndarray)):
-        image_path = image_path[0] if len(image_path) > 0 else None
-    elif isinstance(image_path, pd.Series):
-        image_path = image_path.iloc[0] if not image_path.empty else None
-
-    # Ensure selected_identity is a string
-    if isinstance(selected_identity, (list, np.ndarray)):
-        selected_identity = selected_identity[0] if len(selected_identity) > 0 else None
-    elif isinstance(selected_identity, pd.Series):
-        selected_identity = selected_identity.iloc[0] if not selected_identity.empty else None
-
-    # Validate inputs
-    if not image_path or not selected_identity or selected_identity == "None":
-        return "Error: Please select an identity and generate an image first."
+    # Validate selected_identity
+    if not selected_identity or selected_identity == "None":
+        return "Error: Please select a valid identity."
 
     try:
-        clone_number, nickname = selected_identity.split(": ")
+        # Extract clone number (e.g., "CLN-024" from "CLN-024: Clanim")
+        clone_number = selected_identity.split(": ")[0]
         row = df_identities[df_identities['Clone Number'] == clone_number].iloc[0]
+        print(f"DEBUG: share_to_x for {selected_identity}, row data: Clone Number={row['Clone Number']}, Nickname={row['Nickname']}")
+
+        # Extract image path from Image column
+        image_path = row['Image']
+        print(f"DEBUG: Image column value: {image_path}")
+        if image_path and image_path.startswith('<img src="'):
+            image_path = image_path.split('"')[1]  # Get src value
+            print(f"DEBUG: Extracted image path: {image_path}")
+            if not os.path.exists(image_path):
+                print(f"DEBUG: Image path {image_path} does not exist")
+                return f"Error: Image file {image_path} not found for {selected_identity}"
+        else:
+            # Fallback: Search for image by nickname
+            nickname = row['Nickname'].replace(' ', '').lower()
+            pattern = os.path.join("generated_images", f"{nickname}_*.png")
+            matching_files = glob.glob(pattern)
+            if matching_files:
+                image_path = matching_files[0]
+                print(f"DEBUG: Fallback image found: {image_path}")
+            else:
+                print(f"DEBUG: No image found for nickname {nickname}")
+                return f"Error: No valid image found for {selected_identity}. Please generate an image first."
+
+        # Validate image path
+        if not image_path or not os.path.exists(image_path):
+            return f"Error: No valid image found for {selected_identity}. Please generate an image first."
         
+        # Verify image file accessibility
+        try:
+            with open(image_path, 'rb') as img_file:
+                img_file.read(1)  # Test read access
+            print(f"DEBUG: Image file {image_path} is accessible")
+        except Exception as e:
+            error_msg = f"Error accessing image file {image_path}: {str(e)}"
+            print(error_msg)
+            return error_msg
+
         # Use suggested caption if none provided
         if not caption:
-            caption = suggest_caption(row)
+            nickname = row['Nickname']
+            profession = row['Profession']
+            hair_color = row['Hair color']
+            age = row['Age']
+            cosmic_tattoo = row.get('Cosmic Tattoo', 'cosmic glow')  # Fallback if column missing
+            is_quantum_poet = 'Quantum Poet' in row['Profession']
+            version = f"{datetime.now().strftime('%Y.%m')}"
+            caption = f"{nickname}, a {str(age)} year old female clone with {hair_color.lower()} hair and profession a {profession.lower()} her tattoo {cosmic_tattoo.lower()}!"
+            if is_quantum_poet:
+                caption += " 🌌✨🌠"
+            else:
+                caption += " 🌌"
+            # Add call to action and hashtags
+            cosmic_quotes = [
+                "Embracing the stardust within!",
+                "Dancing through the nebula of dreams!",
+                "A spark in the cosmic tapestry!",
+                "Weaving quantum dreams into reality!",
+                "Where starlight meets soul!",
+                "Echoing through the cosmic void!",
+                "Painting with pulsar light!",
+                "A constellation of possibilities!",
+                "Sailing on solar winds!",
+                "Quantum whispers in starlight!",
+                "Chronicles of cosmic creation!",
+                "Aurora dreams in digital space!",
+                "Where nebulae dance eternal!",
+                "Starborn and pixel-perfect!",
+                "Cosmic code meets stardust soul!",
+                "Threading through space-time!",
+                "Where AI meets infinity!",
+                "Digital dreams in stellar light!",
+                "Quantum-encoded starchild!",
+                "Cosmic poetry in binary!",
+                "Echoes of stellar genesis!",
+                "Digital deity of the stars!",
+                "Neural networks in nebulae!"
+            ]
+            caption += f" Join the cosmic journey! #CosmicDreams #AIArt #NeuralIdentityMatrix {random.choice(cosmic_quotes)}"
             print(f"Using suggested caption: {caption}")
-        
+
         # Load X API credentials
         consumer_key = os.getenv("X_CONSUMER_KEY")
         consumer_secret = os.getenv("X_CONSUMER_SECRET")
         access_token = os.getenv("X_ACCESS_TOKEN")
         access_token_secret = os.getenv("X_ACCESS_TOKEN_SECRET")
-        
+
+        print(f"DEBUG: Consumer Key: {'Set' if consumer_key else 'Not Set'}")
+        print(f"DEBUG: Consumer Secret: {'Set' if consumer_secret else 'Not Set'}")
+        print(f"DEBUG: Access Token: {'Set' if access_token else 'Not Set'}")
+        print(f"DEBUG: Access Token Secret: {'Set' if access_token_secret else 'Not Set'}")
+
         if not all([consumer_key, consumer_secret, access_token, access_token_secret]):
             return "Error: X API credentials not found in environment variables."
-        
-        client = tweepy.Client(
-            consumer_key=consumer_key,
-            consumer_secret=consumer_secret,
-            access_token=access_token,
-            access_token_secret=access_token_secret
-        )
-        
-        api = tweepy.API(tweepy.OAuth1UserHandler(
-            consumer_key, consumer_secret, access_token, access_token_secret
-        ))
-        media = api.media_upload(image_path)
-        client.create_tweet(text=caption, media_ids=[media.media_id])
-        
+
+        # Initialize Tweepy client
+        try:
+            client = tweepy.Client(
+                consumer_key=consumer_key,
+                consumer_secret=consumer_secret,
+                access_token=access_token,
+                access_token_secret=access_token_secret
+            )
+            print("DEBUG: Tweepy Client initialized")
+        except Exception as e:
+            error_msg = f"Error initializing Tweepy Client: {str(e)}"
+            print(error_msg)
+            return error_msg
+
+        # Initialize Tweepy API for media upload
+        try:
+            auth = tweepy.OAuth1UserHandler(
+                consumer_key, consumer_secret, access_token, access_token_secret
+            )
+            api = tweepy.API(auth)
+            print("DEBUG: Tweepy API initialized")
+        except Exception as e:
+            error_msg = f"Error initializing Tweepy API: {str(e)}"
+            print(error_msg)
+            return error_msg
+
+        # Upload media
+        try:
+            media = api.media_upload(image_path)
+            print(f"DEBUG: Media uploaded, media_id: {media.media_id}")
+        except Exception as e:
+            error_msg = f"Error uploading media: {str(e)}"
+            print(error_msg)
+            return error_msg
+
+        # Post tweet
+        try:
+            client.create_tweet(text=caption, media_ids=[media.media_id])
+            print(f"DEBUG: Tweet posted with caption: {caption}")
+        except Exception as e:
+            error_msg = f"Error posting tweet: {str(e)}"
+            print(error_msg)
+            return error_msg
+
         return f"Successfully shared to X: {caption}"
     except Exception as e:
         error_msg = f"Error sharing to X: {str(e)}"
@@ -884,7 +1020,17 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             nationality = le_dict['Nationality'].inverse_transform([int(output[0, 6])])[0]
             ethnicity = le_dict['Ethnicity'].inverse_transform([int(output[0, 7])])[0]
             birthplace = le_dict['Birthplace'].inverse_transform([int(output[0, 8])])[0]
-            profession = le_dict['Profession'].inverse_transform([int(output[0, 9])])[0]
+            decoded_professions = le_dict['Profession'].classes_
+            quantum_poet_idx = le_dict['Profession'].transform(['Quantum Poet'])[0]
+            encoded_professions = df['Profession'].unique()
+            weights = [0.2 if p == quantum_poet_idx else 0.8 / (len(encoded_professions) - 1) for p in encoded_professions]
+            if i == 23:  # Force CLN-024 (0-based index 23) to be Quantum Poet
+                profession_encoded = quantum_poet_idx
+                profession = 'Quantum Poet'
+                print("DEBUG: Forced CLN-024 to be Quantum Poet")
+            else:
+                profession_encoded = random.choices(encoded_professions, weights=weights, k=1)[0]
+            profession = le_dict['Profession'].inverse_transform([profession_encoded])[0]
             body_type = le_dict['Body type'].inverse_transform([int(output[0, 10])])[0]
             hair_color = le_dict['Hair color'].inverse_transform([int(output[0, 11])])[0]
             eye_color = le_dict['Eye color'].inverse_transform([int(output[0, 12])])[0]
@@ -944,11 +1090,15 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
                 cosmic_destiny = random.choice(['Nebula Voyager', 'Pulsar Poet', 'Quantum Pathfinder'])
                 print(f"CLN-{i+1:03d} has a Cosmic Destiny: {cosmic_destiny}")
 
-            # Initialize quantum_poet and cosmic_poem from dataset if available
-            sample_row = df.iloc[random.randint(0, len(df)-1)]
-            quantum_poet = sample_row['Quantum Poet'] if 'Quantum Poet' in df.columns else 'None'
-            cosmic_poem = sample_row['Cosmic Poem'] if 'Cosmic Poem' in df.columns else generate_quantum_poem(quantum_poet)
-            
+            # Assign quantum_poet and cosmic_poem based on Profession
+            if profession == 'Quantum Poet':
+                quantum_poet = random.choice(poetic_styles)
+                cosmic_poem = generate_quantum_poem(quantum_poet)
+                print(f"CLN-{i+1:03d} is a Quantum Poet: {quantum_poet}")
+            else:
+                quantum_poet = 'None'
+                cosmic_poem = 'No poem crafted.'
+
             identity = {
                 'Clone Number': f'CLN-{i+1:03d}',
                 'Firstname': firstname,
@@ -980,11 +1130,6 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
                 'Quantum Poet': quantum_poet,
                 'Cosmic Poem': cosmic_poem,
             }
-            # Add Quantum Poet trait if None and 3% chance
-            if quantum_poet == 'None' and random.random() < 0.03:
-                quantum_poet = random.choice(poetic_styles)
-                cosmic_poem = generate_quantum_poem(quantum_poet)
-                print(f"CLN-{i+1:03d} is a Quantum Poet: {quantum_poet}")
             identity['Quantum Poet'] = quantum_poet
             identity['Cosmic Poem'] = cosmic_poem
             identities.append(identity)
@@ -994,17 +1139,33 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             with open('training_log.txt', 'a') as log_file:
                 log_file.write(f"DataFrame columns: {list(df_identities.columns)}\n")
             
+            # Add Image column for previews
             if profession_filter != 'All':
-                filtered_identities = df_identities[df_identities['Profession'] == profession_filter]
-                print(f"Filtered {len(filtered_identities)} identities with profession: {profession_filter}")
-                df_identities = filtered_identities
-            
+             print(f"DEBUG: Applying profession filter: {profession_filter}")
+             print(f"DEBUG: Available professions in df_identities: {df_identities['Profession'].unique()}")
+             filtered_identities = df_identities[df_identities['Profession'] == profession_filter]
+             print(f"DEBUG: Filtered {len(filtered_identities)} identities with profession: {profession_filter}")
+             if filtered_identities.empty:
+                 print("DEBUG: Warning: No identities match the profession filter")
+             df_identities = filtered_identities
+         
+            # Add Image column for previews *after* filtering
+            df_identities['Image'] = 'No image'  # Initialize all as 'No image'
+            for idx, row in df_identities.iterrows():
+                nickname = row['Nickname'].replace(' ', '').lower()
+                pattern = os.path.join("generated_images", f"{nickname}_*.png")
+                matching_files = glob.glob(pattern)
+                if matching_files:
+                    image_path = matching_files[0]
+                    df_identities.at[idx, 'Image'] = f'<img src="{image_path}" width="100">'
+                    print(f"DEBUG: Assigned image for {row['Nickname']}: {image_path}")
+                else:
+                    print(f"DEBUG: No image found for {row['Nickname']}")
             try:
                 df_identities.to_csv('generated_cha_identities.csv', index=False)
             except PermissionError:
                 print("Error: Cannot write to generated_cha_identities.csv. Check permissions.")
                 raise
-            
             try:
                 additional_names = pd.concat([additional_names, pd.DataFrame([{'Firstname': firstname, 'Lastname': lastname}])], ignore_index=True)
                 additional_names.to_csv('previous_names.csv', index=False)
@@ -1015,29 +1176,48 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             identity_list = [f"{row['Clone Number']}: {row['Nickname']}" for _, row in df_identities.iterrows()]
             identity_list.insert(0, "None")
             
-            fig, ax = plt.subplots()
-            fig.patch.set_alpha(0)
-            ax.set_facecolor('#0a0a28')
-            ax.plot(losses, color='#00e6e6', linewidth=2, label='Loss')
-            ax.set_title('Training Loss', color='#00ffcc', fontsize=14, pad=15)
-            ax.set_xlabel('Epoch', color='#00ffcc', fontsize=12)
-            ax.set_ylabel('Loss', color='#00ffcc', fontsize=12)
-            ax.tick_params(axis='both', colors='#00e6e6')
-            ax.grid(True, color='#00e6e6', alpha=0.3, linestyle='--')
-            ax.spines['top'].set_color('#00e6e6')
-            ax.spines['bottom'].set_color('#00e6e6')
-            ax.spines['left'].set_color('#00e6e6')
-            ax.spines['right'].set_color('#00e6e6')
-            fig.savefig("loss_plot.png")
+            # Placeholder for losses (training losses not tracked in this version)
+            losses = []  # Temporary empty list to avoid undefined variable
+            if losses:
+                fig, ax = plt.subplots()
+                fig.patch.set_alpha(0)
+                ax.set_facecolor('#0a0a28')
+                ax.plot(losses, color='#00e6e6', linewidth=2, label='Loss')
+                ax.set_title('Training Loss', color='#00ffcc', fontsize=14, pad=15)
+                ax.set_xlabel('Epoch', color='#00ffcc', fontsize=12)
+                ax.set_ylabel('Loss', color='#00ffcc', fontsize=12)
+                ax.tick_params(axis='both', colors='#00e6e6')
+                ax.grid(True, color='#00e6e6', alpha=0.3, linestyle='--')
+                ax.spines['top'].set_color('#00e6e6')
+                ax.spines['bottom'].set_color('#00e6e6')
+                ax.spines['left'].set_color('#00e6e6')
+                ax.spines['right'].set_color('#00e6e6')
+                fig.savefig("loss_plot.png")
+            else:
+                fig = None  # Avoid undefined fig in yield
+            
+            # Debug logging before yield
+            print(f"DEBUG: Generated identity {i+1}/{num_identities}, df_identities shape: {df_identities.shape}")
+            print(f"DEBUG: Columns: {list(df_identities.columns)}")
+            if df_identities.empty:
+                print("DEBUG: Warning: df_identities is empty")
             yield df_identities, 'generated_cha_identities.csv', "loss_plot.png", gr.update(choices=identity_list), None, progress, f"Generated {i+1}/{num_identities} identities", fig
             time.sleep(0.1)
-            plt.close(fig)
-    
-    yield df_identities, 'generated_cha_identities.csv', "loss_plot.png", gr.update(choices=identity_list), None, 100, "Generation Complete", fig
+            if fig:
+                plt.close(fig)
+            # Before yield (around line 1187, inside the for loop)
+            print(f"DEBUG: Generated identity {i+1}/{num_identities}, df_identities shape: {df_identities.shape}")
+            print(f"DEBUG: Columns: {list(df_identities.columns)}")
+            if df_identities.empty:
+                print("DEBUG: Warning: df_identities is empty")
+            yield df_identities, 'generated_cha_identities.csv', "loss_plot.png", gr.update(choices=identity_list), None, progress, f"Generated {i+1}/{num_identities} identities", fig
 
 def generate_identities_gui_wrapper(num_identities, resume_training, profession_filter):
+    print("DEBUG: Starting generate_identities_gui_wrapper")
+    print(f"DEBUG: Inputs: num_identities={num_identities}, resume_training={resume_training}, profession_filter={profession_filter}")
     print("Available professions in dropdown:", le_dict['Profession'].classes_)
     for result in generate_identities_gui(num_identities, resume_training, profession_filter, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features, df, first_names, last_names, nicknames, first_name_gen, last_name_gen, nickname_gen, additional_names):
+        print(f"DEBUG: Yielding result from generate_identities_gui: {type(result[0]) if result[0] is not None else 'None'}")
         yield result
 
 # CSS
@@ -1079,6 +1259,7 @@ button:hover {
 }
 .dataframe-container {
     width: 100% !important;
+    max-width: none !important;
     overflow-x: auto;
     background: rgba(20, 20, 60, 0.9);
     border: 1px solid #00e6e6;
@@ -1087,7 +1268,7 @@ button:hover {
 }
 .dataframe table {
     width: auto;
-    min-width: 100%;
+    min-width: 3000px; /* Ensure table is wide enough for all columns */
     border-collapse: collapse;
     font-size: 14px;
 }
@@ -1096,7 +1277,7 @@ button:hover {
     text-align: left;
     border: 1px solid #00e6e6;
     white-space: nowrap;
-    max-width: 70px;
+    max-width: 150px; /* Increased for Image column */
     min-width: 50px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1109,7 +1290,7 @@ button:hover {
     z-index: 10;
 }
 .dataframe-container::-webkit-scrollbar {
-    height: 8px;
+    height: 12px; /* Thicker scrollbar for visibility */
 }
 .dataframe-container::-webkit-scrollbar-track {
     background: #0a0a28;
@@ -1508,9 +1689,9 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
             loss_plot = gr.Plot(label="Training Loss")
             output = gr.Dataframe(
                 label="Identity Matrix Output",
-                headers=['Clone Number', 'Firstname', 'Lastname', 'Nickname', 'Age', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Height', 'Weight', 'Body type', 'Body Measurements', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs', 'Sister Of', 'Energy Signature', 'Cosmic Tattoo', 'Cosmic Playlist', 'Cosmic Pet', 'Cosmic Artifact', 'Cosmic Aura', 'Cosmic Hobby', 'Cosmic Destiny', 'Quantum Poet', 'Cosmic Poem'],
+                headers=['Clone Number', 'Firstname', 'Lastname', 'Nickname', 'Age', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Height', 'Weight', 'Body type', 'Body Measurements', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs', 'Sister Of', 'Energy Signature', 'Cosmic Tattoo', 'Cosmic Playlist', 'Cosmic Pet', 'Cosmic Artifact', 'Cosmic Aura', 'Cosmic Hobby', 'Cosmic Destiny', 'Quantum Poet', 'Cosmic Poem', 'Image'],
                 wrap=False,
-                col_count=29
+                col_count=30
             )
             download_button = gr.File(label="Download Identities as CSV", visible=False)
             download_plot_output = gr.File(label="Download Loss Plot", visible=False)
@@ -1637,4 +1818,4 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
     )
 
 demo.launch(share=False)
-# --- End of Neural Identity Matrix V24.34 ---
+# --- End of Neural Identity Matrix V24.35 ---
