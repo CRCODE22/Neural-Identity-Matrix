@@ -33,7 +33,9 @@ import traceback
 
 # Ensure models directory exists
 MODELS_DIR = "models"
+CSV_DIR = "csv"
 os.makedirs(MODELS_DIR, exist_ok=True)
+os.makedirs(CSV_DIR, exist_ok=True)
 
 def move_existing_images():
     os.makedirs("generated_images", exist_ok=True)
@@ -45,6 +47,41 @@ def move_existing_images():
                 print(f"Moved {file} to {new_path}")
 move_existing_images()
 
+def move_existing_models():
+    model_files = ['first_name_gen.pth', 'last_name_gen.pth', 'nickname_gen.pth', 'model.pth']
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    for file in model_files:
+        if os.path.isfile(file):
+            new_path = os.path.normpath(os.path.join(MODELS_DIR, file))
+            try:
+                if not os.path.exists(new_path):
+                    os.rename(file, new_path)
+                    print(f"Moved {file} to {new_path}")
+                else:
+                    print(f"DEBUG: {new_path} already exists, skipping move for {file}")
+            except Exception as e:
+                print(f"DEBUG: Failed to move {file} to {new_path}: {str(e)}")
+move_existing_models()
+
+def move_existing_csvs():
+    csv_files = [
+        'upper_clothing.csv', 'lower_clothing.csv', 'footwear.csv',
+        'style_themes.csv', 'locations.csv', 'overall_themes.csv',
+        'dataset.csv', 'previous_names.csv', 'generated_cha_identities.csv'
+    ]
+    os.makedirs(CSV_DIR, exist_ok=True)
+    for file in csv_files:
+        if os.path.isfile(file):
+            new_path = os.path.normpath(os.path.join(CSV_DIR, file))
+            try:
+                if not os.path.exists(new_path):
+                    os.rename(file, new_path)
+                    print(f"Moved {file} to {new_path}")
+                else:
+                    print(f"DEBUG: {new_path} already exists, skipping move for {file}")
+            except Exception as e:
+                print(f"DEBUG: Failed to move {file} to {new_path}: {str(e)}")
+move_existing_csvs()
 # Configuration
 COMFYUI_URL = "http://127.0.0.1:8188"  # ComfyUI server address
 # Set random seed for reproducibility
@@ -80,14 +117,14 @@ predefined_last_names = [
 # Load clothing datasets
 try:
     print("Loading clothing datasets...")
-    upper_clothing_df = pd.read_csv('upper_clothing.csv')
-    lower_clothing_df = pd.read_csv('lower_clothing.csv')
-    footwear_df = pd.read_csv('footwear.csv')
+    upper_clothing_df = pd.read_csv(os.path.join(CSV_DIR, 'upper_clothing.csv'))
     print(f"Loaded upper_clothing.csv with {len(upper_clothing_df)} items")
+    lower_clothing_df = pd.read_csv(os.path.join(CSV_DIR, 'lower_clothing.csv'))
     print(f"Loaded lower_clothing.csv with {len(lower_clothing_df)} items")
+    footwear_df = pd.read_csv(os.path.join(CSV_DIR, 'footwear.csv'))
     print(f"Loaded footwear.csv with {len(footwear_df)} items")
 except FileNotFoundError as e:
-    print(f"Error: {e}. Please ensure upper_clothing.csv, lower_clothing.csv, and footwear.csv are in the project directory.")
+    print(f"Error: {e}. Please ensure upper_clothing.csv, lower_clothing.csv, and footwear.csv etc are in the project csv directory.")
     raise
 
 upper_clothing_list = upper_clothing_df['Clothing'].tolist()
@@ -97,11 +134,11 @@ footwear_list = footwear_df['Clothing'].tolist()
 # Load new datasets for style themes, locations, and overall themes
 try:
     print("Loading style themes, locations, and overall themes datasets...")
-    style_themes_df = pd.read_csv('style_themes.csv')
-    locations_df = pd.read_csv('locations.csv')
-    overall_themes_df = pd.read_csv('overall_themes.csv')
+    style_themes_df = pd.read_csv(os.path.join(CSV_DIR, 'style_themes.csv'))
     print(f"Loaded style_themes.csv with {len(style_themes_df)} items")
+    locations_df = pd.read_csv(os.path.join(CSV_DIR, 'locations.csv'))
     print(f"Loaded locations.csv with {len(locations_df)} items")
+    overall_themes_df = pd.read_csv(os.path.join(CSV_DIR, 'overall_themes.csv'))
     print(f"Loaded overall_themes.csv with {len(overall_themes_df)} items")
 except FileNotFoundError as e:
     print(f"Error: {e}. Please ensure style_themes.csv, locations.csv, and overall_themes.csv are in the project directory.")
@@ -135,16 +172,34 @@ class IdentityGenerator(nn.Module):
 class NameGenerator(nn.Module):
     # Save and load NameGenerator models
     def save_name_generator(model, path):
+        full_path = os.path.join(MODELS_DIR, path)
         torch.save(model.state_dict(), path)
         print(f"Saved model to {path}")
 
     def load_name_generator(model, path):
-        if os.path.exists(path):
-            model.load_state_dict(torch.load(path))
+    # Use absolute path to avoid relative path issues
+        full_path = os.path.normpath(os.path.abspath(os.path.join(MODELS_DIR, path)))
+        print(f"DEBUG: Attempting to load model from {full_path}")
+        print(f"DEBUG: Current working directory: {os.getcwd()}")
+        print(f"DEBUG: File exists: {os.path.exists(full_path)}")
+        if not os.path.exists(full_path):
+            print(f"DEBUG: Model file {full_path} does not exist")
+            return False
+        try:
+        # Test file readability
+            with open(full_path, 'rb') as f:
+                f.read(1)
+            print(f"DEBUG: File {full_path} is readable")
+        # Load model state
+            state_dict = torch.load(full_path, map_location=device)
+            model.load_state_dict(state_dict)
             model.eval()
-            print(f"Loaded model from {path}")
+            print(f"DEBUG: Successfully loaded model from {full_path}")
             return True
-        return False
+        except Exception as e:
+            print(f"DEBUG: Failed to load model {full_path}: {str(e)}")
+            return False
+
     def __init__(self, vocab_size, hidden_size, embedding_dim, num_layers=1):
         super(NameGenerator, self).__init__()
         self.num_layers = num_layers
@@ -165,20 +220,18 @@ class NameGenerator(nn.Module):
 
 # Load dataset
 try:
-    print("Loading dataset from dataset.csv")
-    df = pd.read_csv('dataset.csv')
-    df_names = pd.read_csv('previous_names.csv')
+    print(f"Loading dataset from {os.path.join(CSV_DIR, 'dataset.csv')}")
+    df = pd.read_csv(os.path.join(CSV_DIR, 'dataset.csv'))
     print(f"Loaded dataset.csv with {len(df)} rows")
 except FileNotFoundError:
     print("Error: dataset.csv not found!")
     raise
 try:
-    additional_names = pd.read_csv('previous_names.csv')
-    print(f"Rows in previous_names.csv: {len(df_names)}")
-    print(f"Loaded {len(additional_names)} additional first names and last names from previous_names.csv")
+    additional_names = pd.read_csv(os.path.join(CSV_DIR, 'previous_names.csv'))
+    print(f"Rows in previous_names.csv: {len(additional_names)}")
 except FileNotFoundError:
-    print("Warning: previous_names.csv not found. Creating empty DataFrame.")
-    additional_names = pd.DataFrame(columns=['Firstname', 'Lastname'])
+    print(f"Warning: {os.path.join(CSV_DIR, 'previous_names.csv')} not found, proceeding without additional names")
+    additional_names = pd.DataFrame(columns=['First Name', 'Last Name'])
 
 # Combine dataset names
 first_names = list(set(df['Firstname'].tolist() + additional_names['Firstname'].tolist() + predefined_first_names))
@@ -264,20 +317,18 @@ nickname_gen = NameGenerator(
 ).to(device)
 
 # Load or train name generators
-if not NameGenerator.load_name_generator(first_name_gen, 'first_name_gen.pth'):
-    print("Training first_name_gen...")
-    train_name_generator(first_name_gen, first_names, first_name_char_to_idx, first_name_max_len, device)
-    NameGenerator.save_name_generator(first_name_gen, 'first_name_gen.pth')
-
-if not NameGenerator.load_name_generator(last_name_gen, 'last_name_gen.pth'):
-    print("Training last_name_gen...")
-    train_name_generator(last_name_gen, last_names, last_name_char_to_idx, last_name_max_len, device)
-    NameGenerator.save_name_generator(last_name_gen, 'last_name_gen.pth')
-
-if not NameGenerator.load_name_generator(nickname_gen, 'nickname_gen.pth'):
-    print("Training nickname_gen...")
-    train_name_generator(nickname_gen, nicknames, nickname_char_to_idx, nickname_max_len, device)
-    NameGenerator.save_name_generator(nickname_gen, 'nickname_gen.pth')
+for gen, name, data, char_to_idx, max_len in [
+    (first_name_gen, 'first_name_gen.pth', first_names, first_name_char_to_idx, first_name_max_len),
+    (last_name_gen, 'last_name_gen.pth', last_names, last_name_char_to_idx, last_name_max_len),
+    (nickname_gen, 'nickname_gen.pth', nicknames, nickname_char_to_idx, nickname_max_len)
+]:
+    full_path = os.path.normpath(os.path.abspath(os.path.join(MODELS_DIR, name)))
+    if not NameGenerator.load_name_generator(gen, name):
+        print(f"Training {name.split('.')[0]}...")
+        train_name_generator(gen, data, char_to_idx, max_len, device)
+        NameGenerator.save_name_generator(gen, name)
+    else:
+        print(f"DEBUG: Successfully loaded {name} from {full_path}")
 
 # Nickname suffixes
 nickname_suffixes = [
@@ -958,9 +1009,20 @@ def share_to_x(image_input, caption, df_identities, selected_identity):
 # Generate identities
 def generate_identities_gui(num_identities, resume_training, profession_filter, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features, df, first_names, last_names, nicknames, first_name_gen, last_name_gen, nickname_gen, additional_names):
     global model
-    if resume_training and os.path.exists('model.pth'):
-        model.load_state_dict(torch.load('model.pth'))
-    
+    if resume_training:
+        model_path = os.path.normpath(os.path.join(MODELS_DIR, 'model.pth'))
+        print(f"DEBUG: Attempting to load model from {model_path}")
+        if os.path.exists(model_path):
+            try:
+                with open(model_path, 'rb') as f:
+                    f.read(1)  # Test read access
+                model.load_state_dict(torch.load(model_path))
+                print(f"Loaded model from {model_path}")
+            except Exception as e:
+                print(f"DEBUG: Failed to load model {model_path}: {str(e)}")
+                print("Proceeding with new model training")
+        else:
+            print(f"DEBUG: Model file {model_path} does not exist, proceeding with new model training")
     generated_firstnames = set()
     generated_lastnames = set()
     generated_nicknames = set()
@@ -994,7 +1056,7 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
         time.sleep(0.1)
         plt.close(fig)
     
-    torch.save(model.state_dict(), 'model.pth')
+    torch.save(model.state_dict(), os.path.join(MODELS_DIR, 'model.pth'))
     print(f"Training Summary: Total Epochs: {total_epochs}, Final Loss: {losses[-1]:.6f}, Total Time: {total_epochs * 0.084:.2f}s")
     
     model.eval()
