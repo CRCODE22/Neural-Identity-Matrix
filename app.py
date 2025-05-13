@@ -1248,7 +1248,7 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
                 'Cosmic Destiny': cosmic_destiny,
                 'Quantum Poet': quantum_poet
             })
-            print(f"DEBUG: Generated song_prompt for {nickname}: {song_prompt}")
+            print(f"DEBUG: Yielding song_prompt for {nickname}: {song_prompt}")
             
             print(f"DEBUG: Assigning nickname to identity: {nickname}")
             identity = {
@@ -1345,7 +1345,7 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             if df_identities.empty:
                 print("DEBUG: Warning: df_identities is empty")
             
-            print(f"DEBUG: Yielding 9 values for identity {i+1}/{num_identities}")
+            print(f"DEBUG: Yielding 9 values for identity {i+1}/{num_identities}, song_prompt: {song_prompt}")
             yield df_identities, 'generated_cha_identities.csv', 'loss_plot.png', gr.update(choices=identity_list), None, progress, f"Generated {i+1}/{num_identities} identities", fig, song_prompt
             time.sleep(0.1)
             if fig:
@@ -1865,6 +1865,9 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
                 )
                 allow_nsfw = gr.Checkbox(label="Allow NSFW Content (May Include Nudity)", value=False)
             
+            # New button for song prompt
+            show_song_prompt_button = gr.Button("Show Song Prompt for Selected Clone")
+
             with gr.Row():
                 style_theme_dropdown = gr.Dropdown(
                     choices=style_themes_list,
@@ -1918,6 +1921,26 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
     def toggle_nsfw_warning(allow_nsfw):
         return gr.update(visible=allow_nsfw)
 
+    # New function to show song prompt for selected clone
+    def show_song_prompt(selected_identity, df_identities):
+        print(f"DEBUG: show_song_prompt called with selected_identity: {selected_identity}")
+        if selected_identity == "None" or df_identities is None:
+            return "No clone selected."
+        try:
+            clone_number = selected_identity.split(":")[0].strip()
+            print(f"DEBUG: Extracted clone_number: {clone_number}")
+            row = df_identities[df_identities['Clone Number'] == clone_number]
+            if not row.empty:
+                song_prompt = row['Song Prompt'].iloc[0]
+                print(f"DEBUG: Found song prompt for {clone_number}: {song_prompt}")
+                return song_prompt
+            else:
+                print(f"DEBUG: No row found for {clone_number}")
+                return "Song prompt not found."
+        except Exception as e:
+            print(f"DEBUG: Error in show_song_prompt: {str(e)}")
+            return "Error retrieving song prompt."
+
     generate_button.click(
         fn=generate_identities_gui_wrapper,
         inputs=[num_identities, resume_training, profession_filter],
@@ -1931,6 +1954,13 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
         fn=update_log,
         inputs=None,
         outputs=log_output
+    )
+
+    # Connect the new button
+    show_song_prompt_button.click(
+        fn=show_song_prompt,
+        inputs=[identity_dropdown, output],
+        outputs=song_prompt_output
     )
 
     generate_image_button.click(
