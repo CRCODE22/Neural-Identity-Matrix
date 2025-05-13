@@ -358,62 +358,107 @@ def generate_quantum_poem(quantum_poet):
         'Rhapsodist of Stellar Canticles': 'Stellar canticles, my voice does soar,\nRhapsodies for worlds and more.'
     }
     return templates.get(quantum_poet, 'A cosmic verse awaits creation.')
+
+def generate_song_prompt(identity):
+    """Generate a song prompt based on identity traits."""
+    base_styles = ['galactic pop', 'nebula chillwave', 'cosmic synth', 'pulsar trance', 'quantum lo-fi', 'stellar rock']
+    modifiers = ['ethereal', 'vibrant', 'mystical', 'electric', 'dreamy', 'introspective']
+    
+    style = random.choice(base_styles)
+    modifier = random.choice(modifiers)
+    
+    if identity['Profession'] == 'Quantum Poet':
+        style = 'cosmic poetry beat'
+    elif identity['Cosmic Tattoo'] != 'None':
+        modifier = f"{identity['Cosmic Tattoo'].lower()} infused"
+    elif identity['Cosmic Aura'] != 'None':
+        modifier = f"{identity['Cosmic Aura'].lower()} glowing"
+    elif identity['Cosmic Destiny'] != 'None':
+        style = f"{identity['Cosmic Destiny'].lower()} anthem"
+    
+    return f"{modifier} {style}"
+
 # Generate names
-def generate_name(generator, char_to_idx, idx_to_char, max_len, device, name_type='firstname', existing_names=None, temperature=0.7):
+def generate_name(generator, char_to_idx, idx_to_char, max_len, device, name_type='firstname', existing_names=None, temperature=1.2):
     generator.eval()
+    name = []
+    valid_starts = [c for c in char_to_idx.keys() if c not in ['\n', '<start>', '<end>'] and c.isalpha()]
+    start_char = random.choice(valid_starts if valid_starts else ['A'])
+    try:
+        char_idx = char_to_idx[start_char]
+    except KeyError:
+        print(f"WARNING: '{start_char}' not in char_to_idx, using 'A'")
+        char_idx = char_to_idx.get('A', list(char_to_idx.values())[0])
+    input_char = torch.tensor([[char_idx]], dtype=torch.long).to(device)
+    
+    hidden, cell = generator.init_hidden(1)
+    hidden = hidden.to(device)
+    cell = cell.to(device)
+    
+    min_length = 3 if name_type == 'nickname' else 2
+
     with torch.no_grad():
-        for _ in range(10):
-            name = []
-            if name_type in ['firstname', 'lastname']:
-                valid_starts = [name[0] for name in existing_names if name and isinstance(name, str) and len(name) > 0]
-            else:
-                valid_starts = list(char_to_idx.keys())
-            start_char = random.choice(valid_starts if valid_starts else ['A'])
-            try:
-                char_idx = char_to_idx[start_char]
-            except KeyError:
-                print(f"Warning: '{start_char}' not in char_to_idx. Using 'A'.")
-                char_idx = char_to_idx.get('A', list(char_to_idx.values())[0])
-            input_char = torch.tensor([[char_idx]], dtype=torch.long).to(device)
-            
-            hidden, cell = generator.init_hidden(1)
-            
-            min_length = 3 if name_type == 'nickname' else 1
-            for i in range(max_len):
-                output, hidden, cell = generator(input_char, hidden, cell)
-                output_dist = output.squeeze().div(temperature).exp()
-                char_idx = torch.multinomial(output_dist, 1).item()
-                char = idx_to_char[char_idx]
-                
-                if char == '\n' and (name_type != 'nickname' or len(name) >= min_length):
+        for i in range(max_len):
+            output, hidden, cell = generator(input_char, hidden, cell)
+            output = output.squeeze()
+            if output.dim() == 0:
+                output = output.unsqueeze(0)
+            output_dist = torch.softmax(output / temperature, dim=-1)
+            char_idx = torch.multinomial(output_dist, 1).item()
+
+            if char_idx == char_to_idx.get('\n', -1):
+                if name_type == 'nickname' and len(name) >= min_length:
                     break
-                if i == max_len - 1 and name_type == 'nickname' and len(name) < min_length:
-                    continue
-                name.append(char)
-                input_char = torch.tensor([[char_idx]], dtype=torch.long).to(device)
-            
-            generated_name = ''.join(name).replace('\n', '').capitalize()
-            
-            if name_type == 'nickname' and random.random() < 0.5:
-                suffix = random.choice(nickname_suffixes)
-                generated_name += suffix
-            
-            invalid_chars = set(', -')
-            if (len(generated_name) < min_length or
-                any(char in invalid_chars for char in generated_name) or
-                any(char not in char_to_idx for char in generated_name.lower())):
                 continue
-            
-            if existing_names and generated_name in existing_names:
+
+            if char_idx not in idx_to_char:
+                char_idx = random.choice([k for k in idx_to_char.keys() if k.isalpha()])
+                char = str(idx_to_char[char_idx])
+            else:
+                char = str(idx_to_char[char_idx])
+
+            if char == '<end>':
+                break
+            if i == max_len - 1 and name_type == 'nickname' and len(name) < min_length:
                 continue
-            return generated_name
-        
-        if name_type == 'firstname':
-            return random.choice(predefined_first_names)
-        elif name_type == 'lastname':
-            return random.choice(predefined_last_names)
-        else:
-            return f"Nick{name_type.capitalize()}"
+            name.append(char)
+            input_char = torch.tensor([[char_to_idx.get(char, char_to_idx.get('A', 0))]], dtype=torch.long).to(device)
+
+    generated_name = ''.join(name).capitalize()
+    print(f"DEBUG: Raw generated name: {generated_name}")
+
+    if name_type == 'nickname':
+        suffixes = ['Star', 'Cosmo', 'Dreamer', 'Vibe', 'Guru', 'Nebula', 'Quantum', 'Spark', '42', 'Player', 'GamerX', 'Pro', 'ModelX', 'Starlet', 'Glam', 'Clone', 'NIM', 'Core']
+        if random.random() < 0.3 and len(generated_name) + len(suffixes[0]) <= max_len:
+            generated_name += random.choice(suffixes)
+        while len(generated_name) < min_length:
+            extra_chars = random.choices(list('abcdefghijklmnopqrstuvwxyz'), k=min_length - len(generated_name))
+            generated_name += ''.join(extra_chars)
+        generated_name = generated_name[:max_len]
+        print(f"DEBUG: Generated nickname: {generated_name}")
+
+    invalid_chars = set(', -')
+    if name_type == 'nickname':
+        if len(generated_name) < min_length or any(char in invalid_chars for char in generated_name.lower()):
+            print(f"DEBUG: Invalid nickname '{generated_name}', using fallback")
+            return random.choice(['Star', 'Cosmo', 'Nebula', 'Quantum', 'Vibe']) + str(random.randint(10, 99))
+    else:
+        if (len(generated_name) < min_length or
+            any(char in invalid_chars for char in generated_name.lower()) or
+            any(char not in char_to_idx for char in generated_name.lower() if char.isalpha()) or
+            not generated_name.replace(' ', '').isalnum()):
+            print(f"DEBUG: Invalid name '{generated_name}', using fallback")
+            if name_type == 'firstname':
+                return random.choice(predefined_first_names)
+            elif name_type == 'lastname':
+                return random.choice(predefined_last_names)
+
+    if existing_names and generated_name in existing_names:
+        print(f"DEBUG: Name '{generated_name}' already exists, retrying")
+        return generate_name(generator, char_to_idx, idx_to_char, max_len, device, name_type, existing_names, temperature)
+
+    print(f"DEBUG: Final nickname returned: {generated_name}")
+    return generated_name
 
 # Preprocess data
 le_dict = {}
@@ -1006,6 +1051,39 @@ def share_to_x(image_input, caption, df_identities, selected_identity):
             f.write(f"{datetime.now()}: {error_msg}\n")
         return error_msg
 
+def generate_song_prompt(identity):
+    """Generate a detailed song prompt based on identity traits."""
+    base_styles = [
+        'galactic pop', 'nebula chillwave', 'cosmic synth', 'pulsar trance',
+        'quantum lo-fi', 'stellar rock', 'ethereal electronica', 'cosmic folk',
+        'quantum jazz', 'synthwave', 'cyberpunk', 'galactic hip-hop', 'celestial metal'
+    ]
+    modifiers = ['ethereal', 'vibrant', 'mystical', 'electric', 'dreamy', 'introspective', 'starry']
+    instruments = ['pulsating synths', 'nebula bass', 'starry piano', 'cosmic arpeggios', 'ethereal pads']
+    bpms = [101, 105, 109, 125, 136, 149]
+    keys = ['C major', 'G major', 'A minor']
+    
+    style = random.choice(base_styles)
+    modifier = random.choice(modifiers)
+    instrument1 = random.choice(instruments)
+    instrument2 = random.choice([i for i in instruments if i != instrument1])
+    bpm = random.choice(bpms)
+    key = random.choice(keys)
+    
+    if identity['Profession'] == 'Quantum Poet':
+        style = 'cosmic poetry beat'
+        modifier = 'poetic'
+    elif identity['Cosmic Tattoo'] != 'None':
+        modifier = f"{identity['Cosmic Tattoo'].lower()} infused"
+    elif identity['Cosmic Aura'] != 'None':
+        modifier = f"{identity['Cosmic Aura'].lower()} glowing"
+    elif identity['Cosmic Destiny'] != 'None':
+        style = f"{identity['Cosmic Destiny'].lower()} anthem"
+    
+    prompt = f"{modifier} {style}, {instrument1}, {instrument2}, {bpm} bpm, {key}, with a cosmic, otherworldly atmosphere, featuring lyrics like 'dreams soar in cosmic flight'"
+    print(f"DEBUG: Generated song prompt: {prompt}")
+    return prompt
+
 # Generate identities
 def generate_identities_gui(num_identities, resume_training, profession_filter, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features, df, first_names, last_names, nicknames, first_name_gen, last_name_gen, nickname_gen, additional_names):
     global model
@@ -1014,15 +1092,14 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
         print(f"DEBUG: Attempting to load model from {model_path}")
         if os.path.exists(model_path):
             try:
-                with open(model_path, 'rb') as f:
-                    f.read(1)  # Test read access
-                model.load_state_dict(torch.load(model_path))
+                model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
                 print(f"Loaded model from {model_path}")
             except Exception as e:
                 print(f"DEBUG: Failed to load model {model_path}: {str(e)}")
                 print("Proceeding with new model training")
         else:
             print(f"DEBUG: Model file {model_path} does not exist, proceeding with new model training")
+    
     generated_firstnames = set()
     generated_lastnames = set()
     generated_nicknames = set()
@@ -1052,7 +1129,7 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
         ax.spines['left'].set_color('#00e6e6')
         ax.spines['right'].set_color('#00e6e6')
         fig.savefig("loss_plot.png")
-        yield None, None, None, gr.update(choices=["None"]), None, progress, f"Training: Cycle {current_cycle}/{cycles}, Epoch {current_epoch}/{epochs_per_cycle}", fig
+        yield None, None, None, gr.update(choices=["None"]), None, progress, f"Training: Cycle {current_cycle}/{cycles}, Epoch {current_epoch}/{epochs_per_cycle}", fig, ""
         time.sleep(0.1)
         plt.close(fig)
     
@@ -1062,10 +1139,11 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
     model.eval()
     with torch.no_grad():
         for i in range(num_identities):
-            firstname = generate_name(first_name_gen, first_name_char_to_idx, first_name_idx_to_char, first_name_max_len, device, name_type='firstname', existing_names=generated_firstnames, temperature=0.7)
-            lastname = generate_name(last_name_gen, last_name_char_to_idx, last_name_idx_to_char, last_name_max_len, device, name_type='lastname', existing_names=generated_lastnames, temperature=0.7)
-            nickname = generate_name(nickname_gen, nickname_char_to_idx, nickname_idx_to_char, nickname_max_len, device, name_type='nickname', existing_names=generated_nicknames, temperature=0.7)
+            firstname = generate_name(first_name_gen, first_name_char_to_idx, first_name_idx_to_char, first_name_max_len, device, name_type='firstname', existing_names=generated_firstnames, temperature=1.2)
+            lastname = generate_name(last_name_gen, last_name_char_to_idx, last_name_idx_to_char, last_name_max_len, device, name_type='lastname', existing_names=generated_lastnames, temperature=1.2)
+            nickname = generate_name(nickname_gen, nickname_char_to_idx, nickname_idx_to_char, nickname_max_len, device, name_type='nickname', existing_names=generated_nicknames, temperature=1.2)
             
+            print(f"DEBUG: Generated names - Firstname: {firstname}, Lastname: {lastname}, Nickname: {nickname}")
             generated_firstnames.add(firstname)
             generated_lastnames.add(lastname)
             generated_nicknames.add(nickname)
@@ -1086,7 +1164,7 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             quantum_poet_idx = le_dict['Profession'].transform(['Quantum Poet'])[0]
             encoded_professions = df['Profession'].unique()
             weights = [0.2 if p == quantum_poet_idx else 0.8 / (len(encoded_professions) - 1) for p in encoded_professions]
-            if i == 23:  # Force CLN-024 (0-based index 23) to be Quantum Poet
+            if i == 23:
                 profession_encoded = quantum_poet_idx
                 profession = 'Quantum Poet'
                 print("DEBUG: Forced CLN-024 to be Quantum Poet")
@@ -1099,7 +1177,10 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             bra_size = le_dict['Bra/cup size'].inverse_transform([int(output[0, 13])])[0]
             boobs = le_dict['Boobs'].inverse_transform([int(output[0, 14])])[0]
             
-            born = (datetime.now() - timedelta(days=age * 365)).strftime('%Y-%m-%d')
+            current_year = datetime.now().year
+            birth_year = current_year - age
+            born = f"{birth_year}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}"
+            
             body_measurements = f"{int(bust)}-{int(waist)}-{int(hips)}"
             
             sister_of = 'None'
@@ -1151,8 +1232,7 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             if random.random() < 0.025:
                 cosmic_destiny = random.choice(['Nebula Voyager', 'Pulsar Poet', 'Quantum Pathfinder'])
                 print(f"CLN-{i+1:03d} has a Cosmic Destiny: {cosmic_destiny}")
-
-            # Assign quantum_poet and cosmic_poem based on Profession
+            
             if profession == 'Quantum Poet':
                 quantum_poet = random.choice(poetic_styles)
                 cosmic_poem = generate_quantum_poem(quantum_poet)
@@ -1160,7 +1240,17 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             else:
                 quantum_poet = 'None'
                 cosmic_poem = 'No poem crafted.'
-
+            
+            song_prompt = generate_song_prompt({
+                'Profession': profession,
+                'Cosmic Tattoo': cosmic_tattoo,
+                'Cosmic Aura': cosmic_aura,
+                'Cosmic Destiny': cosmic_destiny,
+                'Quantum Poet': quantum_poet
+            })
+            print(f"DEBUG: Generated song_prompt for {nickname}: {song_prompt}")
+            
+            print(f"DEBUG: Assigning nickname to identity: {nickname}")
             identity = {
                 'Clone Number': f'CLN-{i+1:03d}',
                 'Firstname': firstname,
@@ -1191,9 +1281,9 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
                 'Cosmic Destiny': cosmic_destiny,
                 'Quantum Poet': quantum_poet,
                 'Cosmic Poem': cosmic_poem,
+                'Song Prompt': song_prompt,
+                'Image': 'No image'
             }
-            identity['Quantum Poet'] = quantum_poet
-            identity['Cosmic Poem'] = cosmic_poem
             identities.append(identity)
             
             df_identities = pd.DataFrame(identities)
@@ -1201,28 +1291,21 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             with open('training_log.txt', 'a') as log_file:
                 log_file.write(f"DataFrame columns: {list(df_identities.columns)}\n")
             
-            # Add Image column for previews
             if profession_filter != 'All':
-             print(f"DEBUG: Applying profession filter: {profession_filter}")
-             print(f"DEBUG: Available professions in df_identities: {df_identities['Profession'].unique()}")
-             filtered_identities = df_identities[df_identities['Profession'] == profession_filter]
-             print(f"DEBUG: Filtered {len(filtered_identities)} identities with profession: {profession_filter}")
-             if filtered_identities.empty:
-                 print("DEBUG: Warning: No identities match the profession filter")
-             df_identities = filtered_identities
-         
-            # Add Image column for previews *after* filtering
-            df_identities['Image'] = 'No image'  # Initialize all as 'No image'
+                print(f"DEBUG: Applying profession filter: {profession_filter}")
+                filtered_identities = df_identities[df_identities['Profession'] == profession_filter]
+                print(f"DEBUG: Filtered {len(filtered_identities)} identities with profession: {profession_filter}")
+                df_identities = filtered_identities
+            
             for idx, row in df_identities.iterrows():
-                nickname = row['Nickname'].replace(' ', '').lower()
-                pattern = os.path.join("generated_images", f"{nickname}_*.png")
+                nickname_lower = row['Nickname'].replace(' ', '').lower()
+                pattern = os.path.join("generated_images", f"{nickname_lower}_*.png")
                 matching_files = glob.glob(pattern)
                 if matching_files:
                     image_path = matching_files[0]
                     df_identities.at[idx, 'Image'] = f'<img src="{image_path}" width="100">'
                     print(f"DEBUG: Assigned image for {row['Nickname']}: {image_path}")
-                else:
-                    print(f"DEBUG: No image found for {row['Nickname']}")
+            
             try:
                 df_identities.to_csv('generated_cha_identities.csv', index=False)
             except PermissionError:
@@ -1238,8 +1321,6 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
             identity_list = [f"{row['Clone Number']}: {row['Nickname']}" for _, row in df_identities.iterrows()]
             identity_list.insert(0, "None")
             
-            # Placeholder for losses (training losses not tracked in this version)
-            losses = []  # Temporary empty list to avoid undefined variable
             if losses:
                 fig, ax = plt.subplots()
                 fig.patch.set_alpha(0)
@@ -1256,31 +1337,50 @@ def generate_identities_gui(num_identities, resume_training, profession_filter, 
                 ax.spines['right'].set_color('#00e6e6')
                 fig.savefig("loss_plot.png")
             else:
-                fig = None  # Avoid undefined fig in yield
+                fig = None
             
-            # Debug logging before yield
             print(f"DEBUG: Generated identity {i+1}/{num_identities}, df_identities shape: {df_identities.shape}")
             print(f"DEBUG: Columns: {list(df_identities.columns)}")
+            print(f"DEBUG: DataFrame Nickname for CLN-{i+1:03d}: {df_identities.iloc[-1]['Nickname']}")
             if df_identities.empty:
                 print("DEBUG: Warning: df_identities is empty")
-            yield df_identities, 'generated_cha_identities.csv', "loss_plot.png", gr.update(choices=identity_list), None, progress, f"Generated {i+1}/{num_identities} identities", fig
+            
+            print(f"DEBUG: Yielding 9 values for identity {i+1}/{num_identities}")
+            yield df_identities, 'generated_cha_identities.csv', 'loss_plot.png', gr.update(choices=identity_list), None, progress, f"Generated {i+1}/{num_identities} identities", fig, song_prompt
             time.sleep(0.1)
             if fig:
                 plt.close(fig)
-            # Before yield (around line 1187, inside the for loop)
-            print(f"DEBUG: Generated identity {i+1}/{num_identities}, df_identities shape: {df_identities.shape}")
-            print(f"DEBUG: Columns: {list(df_identities.columns)}")
-            if df_identities.empty:
-                print("DEBUG: Warning: df_identities is empty")
-            yield df_identities, 'generated_cha_identities.csv', "loss_plot.png", gr.update(choices=identity_list), None, progress, f"Generated {i+1}/{num_identities} identities", fig
 
 def generate_identities_gui_wrapper(num_identities, resume_training, profession_filter):
-    print("DEBUG: Starting generate_identities_gui_wrapper")
-    print(f"DEBUG: Inputs: num_identities={num_identities}, resume_training={resume_training}, profession_filter={profession_filter}")
-    print("Available professions in dropdown:", le_dict['Profession'].classes_)
-    for result in generate_identities_gui(num_identities, resume_training, profession_filter, le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features, df, first_names, last_names, nicknames, first_name_gen, last_name_gen, nickname_gen, additional_names):
-        print(f"DEBUG: Yielding result from generate_identities_gui: {type(result[0]) if result[0] is not None else 'None'}")
-        yield result
+    final_df = None
+    final_csv = None
+    final_plot = None
+    final_dropdown = gr.update(choices=["None"])
+    final_image = None
+    final_progress = 0
+    final_status = "Ready to Generate"
+    final_loss_plot = None
+    final_song_prompt = ""
+
+    for outputs in generate_identities_gui(
+        num_identities, resume_training, profession_filter,
+        le_dict, scaler_age, scaler_height, scaler_weight, scaler_measurements, scaler_features,
+        df, first_names, last_names, nicknames,
+        first_name_gen, last_name_gen, nickname_gen, additional_names
+    ):
+        df_identities, csv_file, plot_file, dropdown_update, image_output, progress, status, loss_plot, song_prompt = outputs
+        final_df = df_identities
+        final_csv = csv_file
+        final_plot = plot_file
+        final_dropdown = dropdown_update
+        final_image = image_output
+        final_progress = progress
+        final_status = status
+        final_loss_plot = loss_plot
+        final_song_prompt = song_prompt
+        yield final_df, final_csv, final_plot, final_dropdown, final_image, final_progress, final_status, final_loss_plot, final_song_prompt
+
+    return final_df, final_csv, final_plot, final_dropdown, final_image, final_progress, final_status, final_loss_plot, final_song_prompt
 
 # CSS
 custom_css = """
@@ -1722,8 +1822,6 @@ button:hover {
     margin: 10px 0;
 }
 """
-
-# Create Gradio interface with new dropdowns
 with gr.Blocks(css=custom_css, theme="default") as demo:
     gr.Markdown("# Neural Identity Matrix")
     gr.Markdown("Generate futuristic clone identities with an evolving AI core.")
@@ -1748,12 +1846,13 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
 
             progress_bar = gr.Slider(minimum=0, maximum=100, value=0, label="Progress", interactive=False)
             status_message = gr.Markdown("Ready to Generate")
+            song_prompt_output = gr.Textbox(label="Latest Song Prompt", interactive=False)
             loss_plot = gr.Plot(label="Training Loss")
             output = gr.Dataframe(
                 label="Identity Matrix Output",
-                headers=['Clone Number', 'Firstname', 'Lastname', 'Nickname', 'Age', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Height', 'Weight', 'Body type', 'Body Measurements', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs', 'Sister Of', 'Energy Signature', 'Cosmic Tattoo', 'Cosmic Playlist', 'Cosmic Pet', 'Cosmic Artifact', 'Cosmic Aura', 'Cosmic Hobby', 'Cosmic Destiny', 'Quantum Poet', 'Cosmic Poem', 'Image'],
+                headers=['Clone Number', 'Firstname', 'Lastname', 'Nickname', 'Age', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Height', 'Weight', 'Body type', 'Body Measurements', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs', 'Sister Of', 'Energy Signature', 'Cosmic Tattoo', 'Cosmic Playlist', 'Cosmic Pet', 'Cosmic Artifact', 'Cosmic Aura', 'Cosmic Hobby', 'Cosmic Destiny', 'Quantum Poet', 'Cosmic Poem', 'Song Prompt', 'Image'],
                 wrap=False,
-                col_count=30
+                col_count=31
             )
             download_button = gr.File(label="Download Identities as CSV", visible=False)
             download_plot_output = gr.File(label="Download Loss Plot", visible=False)
@@ -1769,17 +1868,17 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
             with gr.Row():
                 style_theme_dropdown = gr.Dropdown(
                     choices=style_themes_list,
-                    value=style_themes_list[0],  # Default to first item
+                    value=style_themes_list[0],
                     label="Style Theme"
                 )
                 location_dropdown = gr.Dropdown(
                     choices=locations_list,
-                    value=locations_list[0],  # Default to first item
+                    value=locations_list[0],
                     label="Location"
                 )
                 overall_theme_dropdown = gr.Dropdown(
                     choices=overall_themes_list,
-                    value=overall_themes_list[0],  # Default to first item
+                    value=overall_themes_list[0],
                     label="Overall Theme"
                 )
             seed_input = gr.Number(label="Image Seed (0 for Random)", value=0, minimum=0, step=1, precision=0)
@@ -1822,7 +1921,7 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
     generate_button.click(
         fn=generate_identities_gui_wrapper,
         inputs=[num_identities, resume_training, profession_filter],
-        outputs=[output, download_button, download_plot_output, identity_dropdown, image_output, progress_bar, status_message, loss_plot],
+        outputs=[output, download_button, download_plot_output, identity_dropdown, image_output, progress_bar, status_message, loss_plot, song_prompt_output],
         queue=True
     ).then(
         fn=lambda df: display_image_gallery(df) if df is not None else ["No images generated yet."],
@@ -1858,7 +1957,7 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
 
     clear_button.click(
         fn=lambda: (None, None, None, gr.update(choices=["None"], value="None"), None, 0, "Ready to Generate", None, "", None, "No image generated yet.", ["No images generated yet."], "", "Ready to share to X.", gr.update(visible=False)),
-        outputs=[output, download_button, download_plot_output, identity_dropdown, image_output, progress_bar, status_message, loss_plot, log_output, image_output, image_status, gallery_output, caption_input, share_status, nsfw_warning]
+        outputs=[output, download_button, download_plot_output, identity_dropdown, image_output, progress_bar, status_message, loss_plot, song_prompt_output, image_output, image_status, gallery_output, caption_input, share_status, nsfw_warning]
     )
 
     refresh_log_button.click(
@@ -1880,4 +1979,3 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
     )
 
 demo.launch(share=False)
-# --- End of Neural Identity Matrix V24.34 ---
