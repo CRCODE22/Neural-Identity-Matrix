@@ -371,7 +371,7 @@ for column in ['Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Body typ
     df[column] = le.fit_transform(df[column])
     le_dict[column] = le
 
-new_professions = ['Astrologer', 'Chef', 'DJ', 'Engineer', 'Gamer', 'Hacker', 'Pilot', 'Scientist', 'Streamer', 'Writer']
+new_professions = ['Astrologer', 'Chef', 'DJ', 'Engineer', 'Gamer', 'Hacker', 'Pilot', 'Scientist', 'Streamer', 'Writer', 'Quantum Poet']
 df['Profession'] = le_dict['Profession'].inverse_transform(df['Profession'])
 print("Types in 'Profession' column before adding new professions:", df['Profession'].apply(type).unique())
 for prof in new_professions:
@@ -851,11 +851,11 @@ def share_to_x(image_input, caption, df_identities, selected_identity):
             nickname = row['Nickname']
             profession = row['Profession']
             hair_color = row['Hair color']
-            age = row['Age']
+            age = int(row['Age'])  # Convert to int to ensure no decimal
             cosmic_tattoo = row.get('Cosmic Tattoo', 'cosmic glow')  # Fallback if column missing
             is_quantum_poet = 'Quantum Poet' in row['Profession']
-            version = f"{datetime.now().strftime('%Y.%m')}"
-            caption = f"{nickname}, a {str(age)} year old female clone with {hair_color.lower()} hair and profession a {profession.lower()} her tattoo {cosmic_tattoo.lower()}!"
+            version = f"V{datetime.now().strftime('%Y.%m')}"
+            caption = f"{nickname}, a {age} years old female clone with {hair_color.lower()} hair and her profession a {profession.lower()}, her tattoo {cosmic_tattoo.lower()}!"
             if is_quantum_poet:
                 caption += " 🌌✨🌠"
             else:
