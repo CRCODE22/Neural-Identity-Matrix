@@ -378,6 +378,55 @@ def generate_song_prompt(identity):
     
     return f"{modifier} {style}"
 
+def generate_profession_chart(csv_path="generated_cha_identities.csv"):
+    """Generate a bar chart of clone profession distribution."""
+    try:
+        df = pd.read_csv(csv_path)
+        if df.empty:
+            print("DEBUG: No identities found in CSV for chart generation.")
+            return None, "No identities found for chart generation."
+        
+        # Count professions
+        profession_counts = df['Profession'].value_counts()
+        professions = profession_counts.index.tolist()
+        counts = profession_counts.values.tolist()
+        
+        # Create bar chart
+        fig, ax = plt.subplots(figsize=(10, 6))
+        fig.patch.set_alpha(0)
+        ax.set_facecolor('#0a0a28')
+        
+        # Plot bars with cosmic colors
+        colors = ['#00e6e6', '#ff5555', '#55ff55', '#5555ff', '#ffaa00', 
+                  '#aa00ff', '#00ffaa', '#ff0055', '#55aaff', '#aaff55', '#ff55aa']
+        bars = ax.bar(professions, counts, color=colors[:len(professions)], 
+                      edgecolor=[c.replace('ff', 'cc') for c in colors[:len(professions)]])
+        
+        # Customize chart
+        ax.set_title('Distribution of Clone Professions', color='#00ffcc', fontsize=14, pad=15)
+        ax.set_xlabel('Profession', color='#00ffcc', fontsize=12)
+        ax.set_ylabel('Number of Clones', color='#00ffcc', fontsize=12)
+        ax.tick_params(axis='both', colors='#00e6e6')
+        ax.grid(True, color='#00e6e6', alpha=0.3, linestyle='--')
+        for spine in ax.spines.values():
+            spine.set_color('#00e6e6')
+        
+        # Rotate x-axis labels for readability
+        plt.xticks(rotation=45, ha='right')
+        
+        # Save chart for download
+        chart_path = "profession_chart.png"
+        fig.savefig(chart_path, bbox_inches='tight', transparent=True)
+        
+        print(f"DEBUG: Profession chart saved as {chart_path}")
+        return fig, "Profession chart generated successfully."
+    except Exception as e:
+        error_msg = f"Error generating profession chart: {str(e)}"
+        print(f"DEBUG: {error_msg}")
+        with open('error_log.txt', 'a') as f:
+            f.write(f"{datetime.now()}: {error_msg}\n")
+        return None, error_msg
+
 # Generate names
 def generate_name(generator, char_to_idx, idx_to_char, max_len, device, name_type='firstname', existing_names=None, temperature=1.2):
     generator.eval()
@@ -1361,6 +1410,7 @@ def generate_identities_gui_wrapper(num_identities, resume_training, profession_
     final_status = "Ready to Generate"
     final_loss_plot = None
     final_song_prompt = ""
+    final_profession_chart = None
 
     for outputs in generate_identities_gui(
         num_identities, resume_training, profession_filter,
@@ -1378,9 +1428,12 @@ def generate_identities_gui_wrapper(num_identities, resume_training, profession_
         final_status = status
         final_loss_plot = loss_plot
         final_song_prompt = song_prompt
-        yield final_df, final_csv, final_plot, final_dropdown, final_image, final_progress, final_status, final_loss_plot, final_song_prompt
+        # Generate profession chart
+        chart_fig, chart_status = generate_profession_chart()
+        final_profession_chart = chart_fig
+        yield final_df, final_csv, final_plot, final_dropdown, final_image, final_progress, final_status, final_loss_plot, final_song_prompt, final_profession_chart
 
-    return final_df, final_csv, final_plot, final_dropdown, final_image, final_progress, final_status, final_loss_plot, final_song_prompt
+    return final_df, final_csv, final_plot, final_dropdown, final_image, final_progress, final_status, final_loss_plot, final_song_prompt, final_profession_chart
 
 # CSS
 custom_css = """
@@ -1822,6 +1875,7 @@ button:hover {
     margin: 10px 0;
 }
 """
+
 with gr.Blocks(css=custom_css, theme="default") as demo:
     gr.Markdown("# Neural Identity Matrix")
     gr.Markdown("Generate futuristic clone identities with an evolving AI core.")
@@ -1843,11 +1897,14 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
                 clear_button = gr.Button("Clear Output")
                 refresh_log_button = gr.Button("Refresh Log")
                 download_plot_button = gr.Button("Download Loss Plot")
+                generate_chart_button = gr.Button("Generate Profession Chart")
+                download_chart_button = gr.Button("Download Profession Chart")
 
             progress_bar = gr.Slider(minimum=0, maximum=100, value=0, label="Progress", interactive=False)
             status_message = gr.Markdown("Ready to Generate")
             song_prompt_output = gr.Textbox(label="Latest Song Prompt", interactive=False)
             loss_plot = gr.Plot(label="Training Loss")
+            profession_chart = gr.Plot(label="Clone Profession Distribution")
             output = gr.Dataframe(
                 label="Identity Matrix Output",
                 headers=['Clone Number', 'Firstname', 'Lastname', 'Nickname', 'Age', 'Born', 'Nationality', 'Ethnicity', 'Birthplace', 'Profession', 'Height', 'Weight', 'Body type', 'Body Measurements', 'Hair color', 'Eye color', 'Bra/cup size', 'Boobs', 'Sister Of', 'Energy Signature', 'Cosmic Tattoo', 'Cosmic Playlist', 'Cosmic Pet', 'Cosmic Artifact', 'Cosmic Aura', 'Cosmic Hobby', 'Cosmic Destiny', 'Quantum Poet', 'Cosmic Poem', 'Song Prompt', 'Image'],
@@ -1856,6 +1913,7 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
             )
             download_button = gr.File(label="Download Identities as CSV", visible=False)
             download_plot_output = gr.File(label="Download Loss Plot", visible=False)
+            download_chart_output = gr.File(label="Download Profession Chart", visible=False)
 
             with gr.Row():
                 identity_dropdown = gr.Dropdown(
@@ -1865,7 +1923,6 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
                 )
                 allow_nsfw = gr.Checkbox(label="Allow NSFW Content (May Include Nudity)", value=False)
             
-            # New button for song prompt
             show_song_prompt_button = gr.Button("Show Song Prompt for Selected Clone")
 
             with gr.Row():
@@ -1918,10 +1975,12 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
     def download_loss_plot():
         return "loss_plot.png"
 
+    def download_profession_chart():
+        return "profession_chart.png"
+
     def toggle_nsfw_warning(allow_nsfw):
         return gr.update(visible=allow_nsfw)
 
-    # New function to show song prompt for selected clone
     def show_song_prompt(selected_identity, df_identities):
         print(f"DEBUG: show_song_prompt called with selected_identity: {selected_identity}")
         if selected_identity == "None" or df_identities is None:
@@ -1944,23 +2003,32 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
     generate_button.click(
         fn=generate_identities_gui_wrapper,
         inputs=[num_identities, resume_training, profession_filter],
-        outputs=[output, download_button, download_plot_output, identity_dropdown, image_output, progress_bar, status_message, loss_plot, song_prompt_output],
+        outputs=[output, download_button, download_plot_output, identity_dropdown, image_output, progress_bar, status_message, loss_plot, song_prompt_output, profession_chart],
         queue=True
     ).then(
         fn=lambda df: display_image_gallery(df) if df is not None else ["No images generated yet."],
         inputs=[output],
         outputs=gallery_output
     ).then(
+        fn=generate_profession_chart,
+        inputs=[],
+        outputs=[profession_chart, status_message]
+    ).then(
         fn=update_log,
         inputs=None,
         outputs=log_output
     )
 
-    # Connect the new button
-    show_song_prompt_button.click(
-        fn=show_song_prompt,
-        inputs=[identity_dropdown, output],
-        outputs=song_prompt_output
+    generate_chart_button.click(
+        fn=generate_profession_chart,
+        inputs=[],
+        outputs=[profession_chart, status_message]
+    )
+
+    download_chart_button.click(
+        fn=download_profession_chart,
+        inputs=None,
+        outputs=download_chart_output
     )
 
     generate_image_button.click(
@@ -1987,7 +2055,7 @@ with gr.Blocks(css=custom_css, theme="default") as demo:
 
     clear_button.click(
         fn=lambda: (None, None, None, gr.update(choices=["None"], value="None"), None, 0, "Ready to Generate", None, "", None, "No image generated yet.", ["No images generated yet."], "", "Ready to share to X.", gr.update(visible=False)),
-        outputs=[output, download_button, download_plot_output, identity_dropdown, image_output, progress_bar, status_message, loss_plot, song_prompt_output, image_output, image_status, gallery_output, caption_input, share_status, nsfw_warning]
+        outputs=[output, download_button, download_plot_output, identity_dropdown, image_output, progress_bar, status_message, loss_plot, song_prompt_output, profession_chart, image_status, gallery_output, caption_input, share_status, nsfw_warning]
     )
 
     refresh_log_button.click(
