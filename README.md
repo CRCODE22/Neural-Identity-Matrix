@@ -10,6 +10,13 @@
 - **Social Sharing**: Share generated images to X with auto-suggested captions.
 - **Open-Source Datasets**: Includes `style_themes.csv`, `locations.csv`, `overall_themes.csv`, and more for customizable clone traits.
 
+- ## Latest Update:
+
+- ## 30/05/2025: Distribution of Clone Professions:
+
+- ![image](https://github.com/user-attachments/assets/f3962141-27a7-4ffe-ab93-fe171b85df81)
+
+
 ## Getting Started
 
 ### Prerequisites
