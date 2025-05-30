@@ -52,6 +52,11 @@ Search for: "inputs": {"unet_name": "flux1-dev-fp8-e4m3fn.safetensors", "weight_
 
 ![image](https://github.com/user-attachments/assets/185a256f-bab5-4c06-a271-789f1a93b9a7)
 
+Updated Preview of Clone Identities 30/05/2025
+![image](https://github.com/user-attachments/assets/1ae46f61-9729-4551-ba02-53edf0379e5c)
+
+Below is old Preview of Clone Identities I will properly update the preview later:
+
 ![image](https://github.com/user-attachments/assets/e8ee598e-6968-4870-ba7a-ec81af9b7ad4)
 
 ![image](https://github.com/user-attachments/assets/b37ddfe9-90b5-4bbd-84b1-e666ced0dcd9)
